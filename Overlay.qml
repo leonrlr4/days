@@ -509,13 +509,22 @@ Item {
     }
   }
 
+  // hashing and rescaling a bounded image
+  Watchdog { process: pasteProc; interval: 45000 }
+
   Process {
     id: collectProc
   }
 
+  // re-deriving references from every day file
+  Watchdog { process: collectProc; interval: 60000 }
+
   Process {
     id: openProc
   }
+
+  // handing a link to xdg-open
+  Watchdog { process: openProc; interval: 20000 }
 
   // ---- putting an image back on the clipboard --------------------------------
   // A screenshot kept on a task is usually wanted somewhere else eventually.
@@ -541,6 +550,9 @@ Item {
     }
   }
 
+  // reading a stored image onto the clipboard
+  Watchdog { process: copyProc; interval: 20000 }
+
   Timer {
     id: copiedFlash
     interval: 1400
@@ -555,6 +567,9 @@ Item {
       onStreamFinished: root.eventsArrived(eventsProc.date, text)
     }
   }
+
+  // the calendar answers in about 2.4s
+  Watchdog { process: eventsProc; interval: 30000 }
 
   Timer {
     id: eventDebounce

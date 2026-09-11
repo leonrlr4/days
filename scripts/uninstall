@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 # Undo what scripts/setup did.
 #
 #   scripts/uninstall [--check] [--purge]

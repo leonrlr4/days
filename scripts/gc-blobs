@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 # Delete stored images that no task references any more.
 #
 #   gc-blobs --dir <data dir> [--sha <hash>]

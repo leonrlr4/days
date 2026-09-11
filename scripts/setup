@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 # Put Days where it belongs on the desktop, and say what it changed.
 #
 #   scripts/setup [--check] [--quiet] [--key "SUPER + M"] [--no-key] [--no-enable]

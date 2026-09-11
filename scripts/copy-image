@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 # Put one stored image on the clipboard.
 #
 #   copy-image --dir <data dir> --sha <hash> --ext <png|jpg|webp|gif|avif>
@@ -30,7 +30,7 @@ while (($#)); do
 done
 
 [[ -n "$DIR" ]] || die "no --dir given"
-[[ "$SHA" =~ ^[0-9a-f]{6,64}$ ]] || die "not a content hash: $SHA"
+[[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || die "not a content hash: $SHA"
 
 case "$EXT" in
   png)  mime=image/png ;;
@@ -42,12 +42,32 @@ case "$EXT" in
 esac
 
 blob="$DIR/blobs/$SHA.$EXT"
-[[ -f "$blob" && ! -L "$blob" ]] || die "no stored image for that hash"
+[[ -e "$blob" && ! -L "$blob" ]] || die "no stored image for that hash"
 
 command -v wl-copy >/dev/null || die "wl-clipboard is not installed"
 
+# Opened once, and everything after this reads through that descriptor rather
+# than the name. Testing the path and then reopening it leaves a window in
+# which the file can be replaced -- with a symlink to something else readable,
+# whose bytes would then go on the clipboard.
+#
+# What binds the identity is the hash: blobs are content-addressed, so the name
+# is a claim about the bytes, and checking the bytes behind the descriptor that
+# will actually be read proves the claim. /proc/self/fd/N reopens the same
+# inode, so neither read can be diverted while the descriptor is held.
+exec {blobfd}< "$blob" || die "could not open the stored image"
+held="/proc/self/fd/$blobfd"
+[[ -f "$held" ]] || { exec {blobfd}<&-; die "no stored image for that hash"; }
+
+actual=$(sha256sum < "$held" | cut -d' ' -f1)
+if [[ "$actual" != "$SHA" ]]; then
+  exec {blobfd}<&-
+  die "stored image does not match its hash -- refusing to copy"
+fi
+
 # wl-copy forks and holds the selection until something else claims it; that
 # background process is the clipboard, so it is not waited on.
-wl-copy --type "$mime" < "$blob" || die "could not reach the clipboard"
+wl-copy --type "$mime" < "$held" || { exec {blobfd}<&-; die "could not reach the clipboard"; }
+exec {blobfd}<&-
 
 jq -cn --arg sha "$SHA" --arg mime "$mime" '{ok: true, sha: $sha, mime: $mime}'

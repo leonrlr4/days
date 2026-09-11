@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 # Import an image into the Days store and report it as JSON.
 #
 #   paste-image --dir <data dir> [--file <path>]
