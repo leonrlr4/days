@@ -7,6 +7,8 @@ Markdown note, screenshots you paste straight from the clipboard, and subtasks.
 The day's calendar events sit above the list, read-only. Everything lives in
 your home directory and nothing leaves the machine.
 
+![Days](preview.png)
+
 ## What it does
 
 **A day, not a backlog.** A task belongs to the day it was written on. Today's
@@ -42,11 +44,12 @@ Then bind a key. Days does not take one on its own:
 
 ```lua
 -- ~/.config/hypr/bindings.lua
-o.bind("SUPER + ALT + T", "Daily tasks", "omarchy-shell shell toggle leonrlr4.days {}")
+o.bind("SUPER + M", "Daily tasks", "omarchy-shell shell toggle leonrlr4.days {}")
 ```
 
-`SUPER + T` is Omarchy's own float toggle, which is why the suggestion above
-adds `ALT`.
+`SUPER + M` is free in a stock Omarchy install. Two nearby keys are not, if you
+were about to reach for them: `SUPER + T` toggles floating, and the whole comma
+family belongs to notifications.
 
 Requires `wl-clipboard`, `imagemagick` and `jq`, all of which a stock Omarchy
 install already has.
