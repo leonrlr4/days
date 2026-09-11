@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Undo what scripts/setup did.
+#
+#   scripts/uninstall [--check] [--purge]
+#
+# Removes the keybinding from bindings.lua and disables the plugin. Your tasks
+# and images are left alone unless you pass --purge, which deletes them.
+#
+# Nothing here is destructive by accident: --check reports what would change,
+# the bindings.lua edit touches only the two lines this plugin added, and the
+# data directory is only removed when you ask for it by name.
+set -uo pipefail
+
+ID="leonrlr4.days"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
+BINDINGS="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}/$ID"
+
+CHECK=0
+PURGE=0
+while (($#)); do
+  case "$1" in
+    --check) CHECK=1; shift ;;
+    --purge) PURGE=1; shift ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "uninstall: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+did()  { printf '  \033[33m→\033[0m %s\n' "$1"; }
+note() { printf '    %s\n' "$1"; }
+
+# --- the keybinding ---------------------------------------------------------
+if [[ -f "$BINDINGS" ]] && grep -q "toggle $ID" "$BINDINGS"; then
+  if ((CHECK)); then
+    did "would remove the keybinding from bindings.lua"
+  else
+    # Only the o.bind line and the comment directly above it, so a binding the
+    # user moved or re-commented by hand is left for them to deal with.
+    tmp=$(mktemp)
+    awk -v id="$ID" '
+      /^-- Days: a task list that belongs to a day\.$/ { held = $0; next }
+      $0 ~ ("toggle " id) { held = ""; next }
+      { if (held != "") { print held; held = "" } print }
+      END { if (held != "") print held }
+    ' "$BINDINGS" > "$tmp" && mv "$tmp" "$BINDINGS"
+    did "removed the keybinding from bindings.lua"
+    note "run 'hyprctl reload' to drop it"
+  fi
+else
+  ok "no keybinding to remove"
+fi
+
+# --- the plugin -------------------------------------------------------------
+state=$(omarchy plugin list 2>/dev/null | awk -v id="$ID" '$1 == id { print $2 }')
+if [[ "$state" == "enabled" ]]; then
+  if ((CHECK)); then
+    did "would disable the plugin"
+  else
+    omarchy plugin disable "$ID" >/dev/null 2>&1 && did "disabled the plugin"
+  fi
+else
+  ok "plugin not enabled"
+fi
+
+# --- the data ---------------------------------------------------------------
+if [[ -d "$DATA" ]]; then
+  if ((PURGE)); then
+    if ((CHECK)); then
+      did "would delete $DATA"
+    else
+      rm -rf "$DATA"
+      did "deleted $DATA"
+    fi
+  else
+    ok "tasks and images kept in $DATA"
+    note "pass --purge to delete them too"
+  fi
+fi
+
+echo
+echo "Remove the plugin itself with: omarchy plugin remove $ID"

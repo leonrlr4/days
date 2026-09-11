@@ -62,6 +62,16 @@ Run `scripts/setup` again by hand if something ever resets `shell.json`; the
 plugin, its data and your keybinding are all untouched by that, and one command
 puts the last piece back.
 
+`scripts/setup` touches exactly two things, and only when you run it:
+
+- **`~/.config/omarchy/shell.json`** — enables the plugin, through
+  `omarchy plugin enable`. One line in the `plugins` array.
+- **`~/.config/hypr/bindings.lua`** — appends a comment and one `o.bind` line,
+  and does nothing if a binding for this plugin is already there.
+
+It never edits anything else, never runs on its own, and `--check` makes no
+changes at all.
+
 Pick a different key with `--key "SUPER + D"`, or skip the binding with
 `--no-key`. `SUPER + M` is free in a stock Omarchy install; `SUPER + T` toggles
 floating and the whole comma family belongs to notifications.
@@ -106,6 +116,18 @@ Run it by hand to sweep the whole store:
 ```
 scripts/gc-blobs --dir ~/.local/share/leonrlr4.days
 ```
+
+## Removal
+
+```
+~/.config/omarchy/plugins/leonrlr4.days/scripts/uninstall
+omarchy plugin remove leonrlr4.days
+```
+
+`scripts/uninstall` removes the keybinding it added and disables the plugin.
+Your tasks and images in `~/.local/share/leonrlr4.days/` are kept — add
+`--purge` to delete those too, or `--check` to see what would change without
+changing it.
 
 ## Tests
 
