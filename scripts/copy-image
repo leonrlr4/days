@@ -13,6 +13,8 @@ export PATH="/usr/local/bin:/usr/bin:/bin"
 
 die() { jq -cn --arg e "$1" '{ok: false, error: $e}'; exit 0; }
 
+MAX_BYTES=${DAYS_MAX_BYTES:-67108864}
+
 DIR=""
 SHA=""
 EXT=""
@@ -44,8 +46,6 @@ esac
 blob="$DIR/blobs/$SHA.$EXT"
 [[ -e "$blob" && ! -L "$blob" ]] || die "no stored image for that hash"
 
-command -v wl-copy >/dev/null || die "wl-clipboard is not installed"
-
 # Opened once, and everything after this reads through that descriptor rather
 # than the name. Testing the path and then reopening it leaves a window in
 # which the file can be replaced -- with a symlink to something else readable,
@@ -59,15 +59,38 @@ exec {blobfd}< "$blob" || die "could not open the stored image"
 held="/proc/self/fd/$blobfd"
 [[ -f "$held" ]] || { exec {blobfd}<&-; die "no stored image for that hash"; }
 
-actual=$(sha256sum < "$held" | cut -d' ' -f1)
+# Read once, into something nobody else can reach.
+#
+# Holding the descriptor stops the *name* being swapped, but the inode behind
+# it stays writable: hashing through it and then letting wl-copy read it again
+# is two reads of mutable storage, and the bytes can change in between. So the
+# bytes are copied once into a temporary that is unlinked immediately -- after
+# that no path leads to it at all, and the only references are the descriptors
+# opened here. The digest is taken from that buffer and the clipboard is fed
+# from that same buffer, so what was verified is exactly what is delivered.
+buffer=$(mktemp) || { exec {blobfd}<&-; die "could not stage the image"; }
+exec {wfd}> "$buffer" || { rm -f -- "$buffer"; exec {blobfd}<&-; die "could not stage the image"; }
+exec {hashfd}< "$buffer" || { rm -f -- "$buffer"; exec {blobfd}<&-; die "could not stage the image"; }
+exec {sendfd}< "$buffer" || { rm -f -- "$buffer"; exec {blobfd}<&-; die "could not stage the image"; }
+rm -f -- "$buffer"
+
+# Bounded on the way in: a blob can have grown since it was stored, and this
+# buffer is memory-backed.
+head -c $((MAX_BYTES + 1)) < "$held" >&$wfd
+exec {wfd}>&- {blobfd}<&-
+
+actual=$(sha256sum <&$hashfd | cut -d' ' -f1)
+exec {hashfd}<&-
 if [[ "$actual" != "$SHA" ]]; then
-  exec {blobfd}<&-
+  exec {sendfd}<&-
   die "stored image does not match its hash -- refusing to copy"
 fi
 
+command -v wl-copy >/dev/null || { exec {sendfd}<&-; die "wl-clipboard is not installed"; }
+
 # wl-copy forks and holds the selection until something else claims it; that
 # background process is the clipboard, so it is not waited on.
-wl-copy --type "$mime" < "$held" || { exec {blobfd}<&-; die "could not reach the clipboard"; }
-exec {blobfd}<&-
+wl-copy --type "$mime" <&$sendfd || { exec {sendfd}<&-; die "could not reach the clipboard"; }
+exec {sendfd}<&-
 
 jq -cn --arg sha "$SHA" --arg mime "$mime" '{ok: true, sha: $sha, mime: $mime}'

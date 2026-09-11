@@ -69,6 +69,19 @@ printf 'secret\n' > "$WORK/elsewhere.txt"
 ln -s "$WORK/elsewhere.txt" "$D/blobs/$LINK.png"
 check "a symlinked blob is refused" "false" "$(run --sha "$LINK" --ext png | jq -r .ok)"
 
+# The buffer the bytes are read into is unlinked the moment it exists, so a
+# copy must leave nothing behind even though it staged through the filesystem.
+STAGE="$WORK/tmpdir"; mkdir -p "$STAGE"
+TMPDIR="$STAGE" run --sha "$SHA" --ext png >/dev/null 2>&1
+check "the staging buffer is left unlinked" "0" "$(ls -A "$STAGE" | wc -l)"
+
+# A blob can have grown on disk since it was stored, and the buffer is
+# memory-backed, so the read is bounded on the way in too.
+BIG=$(printf 'd%.0s' {1..64})
+head -c 4000 /dev/urandom > "$D/blobs/$BIG.png"
+check "a blob past the ceiling is refused" "false" \
+  "$(DAYS_MAX_BYTES=1000 run --sha "$BIG" --ext png | jq -r .ok)"
+
 if [[ "${DAYS_TEST_CLIPBOARD:-0}" == "1" ]]; then
   out=$(run --sha "$SHA" --ext png)
   check "a real image copies" "true" "$(jq -r .ok <<<"$out")"
