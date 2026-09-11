@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Delete stored images that no task references any more.
+#
+#   gc-blobs --dir <data dir> [--sha <hash>]
+#
+# References are re-derived from the day files every time, never taken from
+# index.json. The index is a cache maintained incrementally, and this is the
+# one operation that destroys data: a stale or wrong count there would delete a
+# screenshot that is still attached to something. If any day file cannot be
+# read, the reference set is unknown and nothing is deleted at all.
+#
+# The overlay calls this with --sha after removing the last reference to one
+# image. Run it without --sha to sweep the whole store.
+set -uo pipefail
+
+die() { jq -cn --arg e "$1" '{ok: false, error: $e}'; exit 0; }
+
+DIR=""
+ONLY=""
+while (($#)); do
+  case "$1" in
+    --dir) DIR="${2:-}"; shift 2 ;;
+    --sha) ONLY="${2:-}"; shift 2 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$DIR" ]] || die "no --dir given"
+[[ -d "$DIR/days" && -d "$DIR/blobs" ]] || die "not a Days store: $DIR"
+command -v jq >/dev/null || die "jq is not installed"
+
+# A hash becomes a path, so it has to look like one before it goes near the
+# filesystem.
+if [[ -n "$ONLY" && ! "$ONLY" =~ ^[0-9a-f]{6,64}$ ]]; then
+  die "not a content hash: $ONLY"
+fi
+
+# --- what is still referenced --------------------------------------------
+referenced=$(mktemp) || die "could not create a temporary file"
+trap 'rm -f "$referenced"' EXIT
+
+shopt -s nullglob
+for file in "$DIR"/days/*.json; do
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    die "could not read $(basename "$file") -- nothing was deleted"
+  fi
+  jq -r '.tasks[]?.atts[]?.sha // empty' "$file" >> "$referenced" 2>/dev/null ||
+    die "could not read $(basename "$file") -- nothing was deleted"
+done
+sort -u -o "$referenced" "$referenced"
+
+is_referenced() { grep -qxF "$1" "$referenced"; }
+
+removed=()
+kept=()
+
+sweep() { # sweep <sha>
+  local sha=$1
+  if is_referenced "$sha"; then
+    kept+=("$sha")
+    return
+  fi
+  rm -f -- "$DIR/blobs/$sha".* "$DIR/thumbs/$sha.webp"
+  removed+=("$sha")
+}
+
+if [[ -n "$ONLY" ]]; then
+  sweep "$ONLY"
+else
+  declare -A seen=()
+  for blob in "$DIR"/blobs/*; do
+    name=$(basename "$blob")
+    sha=${name%%.*}
+    [[ "$sha" =~ ^[0-9a-f]{6,64}$ ]] || continue
+    [[ -n "${seen[$sha]:-}" ]] && continue
+    seen[$sha]=1
+    sweep "$sha"
+  done
+fi
+
+jq -cn \
+  --argjson removed "$(printf '%s\n' ${removed[@]+"${removed[@]}"} | jq -R . | jq -sc 'map(select(. != ""))')" \
+  --argjson kept "$(printf '%s\n' ${kept[@]+"${kept[@]}"} | jq -R . | jq -sc 'map(select(. != ""))')" \
+  '{ok: true, removed: $removed, kept: $kept}'

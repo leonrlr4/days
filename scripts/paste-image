@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Import an image into the Days store and report it as JSON.
+#
+#   paste-image --dir <data dir> [--file <path>]
+#
+# With --file the image comes from that path; without it, from the Wayland
+# clipboard. A copied file *path* counts as an image too, which is how a
+# screenshot dragged out of a file manager gets in.
+#
+# This is the only subprocess the plugin spawns during normal use. Every other
+# path -- opening, changing day, checking a box, typing -- stays inside QML.
+#
+# stdout is always a single JSON object, on failure as much as on success:
+# the caller parses it and has no other channel to learn what happened.
+set -uo pipefail
+
+die() { jq -cn --arg e "$1" '{ok: false, error: $e}'; exit 0; }
+
+DIR=""
+FILE=""
+while (($#)); do
+  case "$1" in
+    --dir) DIR="${2:-}"; shift 2 ;;
+    --file) FILE="${2:-}"; shift 2 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+[[ -n "$DIR" ]] || die "no --dir given"
+
+for tool in magick sha256sum jq; do
+  command -v "$tool" >/dev/null || die "$tool is not installed"
+done
+
+TMP=$(mktemp -d) || die "could not create a temporary directory"
+trap 'rm -rf "$TMP"' EXIT
+SRC="$TMP/src"
+
+if [[ -n "$FILE" ]]; then
+  [[ -f "$FILE" ]] || die "no such file: $FILE"
+  cp -- "$FILE" "$SRC" || die "could not read $FILE"
+else
+  command -v wl-paste >/dev/null || die "wl-clipboard is not installed"
+  # Take the clipboard's own image type when it offers one. Asking for a type
+  # it does not hold makes wl-paste convert, and the conversion is lossier
+  # than whatever it already has.
+  mime=$(wl-paste --list-types 2>/dev/null | grep -m1 '^image/') || mime=""
+  if [[ -n "$mime" ]]; then
+    wl-paste --no-newline --type "$mime" > "$SRC" 2>/dev/null || die "could not read the clipboard"
+  else
+    # Fall back to a copied path, trimmed of the file:// a file manager adds.
+    path=$(wl-paste --no-newline 2>/dev/null | head -1)
+    path=${path#file://}
+    path=$(printf '%b' "${path//%/\\x}")
+    [[ -n "$path" && -f "$path" ]] || die "the clipboard holds no image"
+    cp -- "$path" "$SRC" || die "could not read $path"
+  fi
+fi
+
+[[ -s "$SRC" ]] || die "the clipboard holds no image"
+
+# identify is the arbiter of whether these bytes are an image at all -- the
+# name they arrived under proves nothing.
+read -r format width height < <(magick identify -format '%m %w %h\n' "$SRC" 2>/dev/null | head -1)
+[[ -n "${format:-}" && -n "${width:-}" && -n "${height:-}" ]] || die "not an image"
+
+case "$format" in
+  PNG) ext=png ;;
+  JPEG|JPG) ext=jpg ;;
+  WEBP) ext=webp ;;
+  GIF) ext=gif ;;
+  AVIF) ext=avif ;;
+  *) die "unsupported image format: $format" ;;
+esac
+
+sha=$(sha256sum "$SRC" | cut -d' ' -f1)
+blob="$DIR/blobs/$sha.$ext"
+thumb="$DIR/thumbs/$sha.webp"
+mkdir -p "$DIR/blobs" "$DIR/thumbs" || die "could not write to $DIR"
+
+deduped=true
+if [[ ! -f "$blob" ]]; then
+  deduped=false
+  # Same filesystem, so the rename is atomic: a reader never sees a blob
+  # whose bytes do not hash to its name.
+  cp -- "$SRC" "$blob.part" && mv -- "$blob.part" "$blob" || die "could not store the image"
+fi
+
+if [[ ! -f "$thumb" ]]; then
+  # 320 on the long edge, shrink-only. Lists load nothing but these, so the
+  # bound is the reason they stay cheap to render.
+  magick "$SRC[0]" -auto-orient -resize '320x320>' -quality 82 "$thumb.part" 2>/dev/null &&
+    mv -- "$thumb.part" "$thumb" || die "could not render a thumbnail"
+fi
+
+jq -cn \
+  --arg sha "$sha" --arg ext "$ext" \
+  --argjson w "$width" --argjson h "$height" \
+  --argjson bytes "$(stat -c%s "$blob")" \
+  --argjson deduped "$deduped" \
+  '{ok: true, sha: $sha, ext: $ext, w: $w, h: $h, bytes: $bytes, deduped: $deduped}'

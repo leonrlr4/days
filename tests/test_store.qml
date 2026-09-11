@@ -366,6 +366,114 @@ Item {
           },
           true)
 
+    // ---- dates -----------------------------------------------------------
+    // h/l steps a day at a time and the grid has to land on real month
+    // boundaries, so this is arithmetic, not formatting.
+
+    check("stepping forward crosses into the next month",
+          function() { return Store.shiftIso("2026-09-30", 1) }, "2026-10-01")
+
+    check("stepping back crosses into the previous year",
+          function() { return Store.shiftIso("2026-01-01", -1) }, "2025-12-31")
+
+    check("February ends on the 28th in a common year",
+          function() { return Store.shiftIso("2026-02-28", 1) }, "2026-03-01")
+
+    check("February ends on the 29th in a leap year",
+          function() { return Store.shiftIso("2024-02-28", 1) }, "2024-02-29")
+
+    check("a century that is not a leap year is handled",
+          function() { return Store.shiftIso("2100-02-28", 1) }, "2100-03-01")
+
+    check("stepping by zero returns the same day",
+          function() { return Store.shiftIso("2026-09-11", 0) }, "2026-09-11")
+
+    check("daysInMonth knows a 30 day month",
+          function() { return Store.daysInMonth("2026-09") }, 30)
+
+    check("daysInMonth knows February in a leap year",
+          function() { return Store.daysInMonth("2024-02") }, 29)
+
+    // The grid is Monday-first, so September 2026 -- which opens on a Tuesday
+    // -- needs exactly one blank before the 1st.
+    check("the month grid leaves room for the days before the 1st",
+          function() { return Store.leadingBlanks("2026-09") }, 1)
+
+    check("a month that opens on a Monday needs no blanks",
+          function() { return Store.leadingBlanks("2026-06") }, 0)
+
+    check("a month that opens on a Sunday needs six blanks",
+          function() { return Store.leadingBlanks("2026-11") }, 6)
+
+    check("shifting a month crosses the year",
+          function() { return Store.shiftMonth("2026-12", 1) }, "2027-01")
+
+    check("shifting a month backwards crosses the year",
+          function() { return Store.shiftMonth("2026-01", -1) }, "2025-12")
+
+    // ---- what the helpers hand back ---------------------------------------
+    // Both of these parse output from a subprocess. Neither can assume the
+    // shape it gets: one talks to the clipboard, the other to another
+    // plugin's script that may be absent, older, or mid-upgrade.
+
+    check("a successful paste becomes an attachment",
+          function() {
+            return Store.parsePaste('{"ok":true,"sha":"abc","ext":"png","w":800,"h":600,"bytes":42,"deduped":false}')
+          },
+          { ok: true, att: { sha: "abc", ext: "png", w: 800, h: 600, bytes: 42 } })
+
+    check("a refused paste carries the reason through",
+          function() { return Store.parsePaste('{"ok":false,"error":"the clipboard holds no image"}') },
+          { ok: false, error: "the clipboard holds no image" })
+
+    check("output that is not JSON is a failure, not a crash",
+          function() { return Store.parsePaste("Traceback: something went wrong") },
+          { ok: false, error: "the paste helper returned nothing usable" })
+
+    check("empty output is a failure",
+          function() { return Store.parsePaste("") },
+          { ok: false, error: "the paste helper returned nothing usable" })
+
+    check("a success missing its hash is not trusted",
+          function() { return Store.parsePaste('{"ok":true,"ext":"png"}').ok },
+          false)
+
+    check("a timed event keeps its clock time and title",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-11T11:30:00+08:00","title":"Standup","calendar_color":"#9a9cff"}]}')
+          },
+          [{ at: "11:30", title: "Standup", color: "#9a9cff" }])
+
+    check("an all-day event has no time to show",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":true,"start":"2026-09-11","title":"Holiday"}]}')[0].at
+          },
+          "")
+
+    // The calendar plugin may not be installed, in which case the script is
+    // missing and the process produces nothing at all.
+    check("no calendar plugin means no events, not an error",
+          function() { return Store.parseEvents("") }, [])
+
+    check("a failed calendar read means no events",
+          function() { return Store.parseEvents('{"ok":false,"error":"Caldir is not installed"}') }, [])
+
+    check("an event with no title still renders",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-11T09:00:00+08:00"}]}')[0].title
+          },
+          "(untitled)")
+
+    check("events are ordered by start time",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[' +
+              '{"all_day":false,"start":"2026-09-11T16:30:00+08:00","title":"late"},' +
+              '{"all_day":true,"start":"2026-09-11","title":"all day"},' +
+              '{"all_day":false,"start":"2026-09-11T09:00:00+08:00","title":"early"}]}')
+              .map(function(e) { return e.title })
+          },
+          ["all day", "early", "late"])
+
     exitTimer.start()
   }
 }

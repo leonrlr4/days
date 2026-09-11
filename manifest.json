@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "leonrlr4.days",
+  "name": "Days",
+  "version": "0.1.0",
+  "author": "leonrlr4",
+  "license": "MIT",
+  "description": "A task list that belongs to a day. Markdown notes, pasted screenshots and subtasks on every task, your calendar's events beside them, and nothing that leaves this machine.",
+  "kinds": [
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Overlay.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Days",
+    "description": "Today's open tasks on the bar; the day itself in an overlay.",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "hideWhenClear": false
+    },
+    "schema": [
+      {
+        "key": "hideWhenClear",
+        "type": "boolean",
+        "label": "Hide the pill when nothing is open",
+        "defaultValue": false
+      }
+    ]
+  }
+}
