@@ -83,7 +83,14 @@ day write, and rebuilt by scanning if it is missing or its version is stale.
 
 Blob refcounts live in the index because attachments deduplicate: the same
 screenshot pasted onto two tasks is one file, and deleting one attachment must
-not delete the other's image. A blob is removed when its count reaches zero.
+not delete the other's image.
+
+The count reaching zero is what *triggers* deletion, but not what authorises
+it. Unlinking is done by `scripts/gc-blobs`, which re-derives the reference set
+from the day files themselves and refuses to delete anything at all if any day
+file cannot be read. The index is a cache maintained incrementally; trusting it
+for the one irreversible operation in the plugin would turn any bug in that
+bookkeeping into a lost screenshot.
 
 Rejected: Markdown in the Obsidian vault. It would make tasks visible in
 Obsidian, but subtasks and attachments would have to be encoded in conventions,
@@ -98,9 +105,11 @@ Opening the overlay, changing day, checking a box and typing all run inside
 QML against `FileView`, which writes atomically on its own. No subprocess is
 spawned on any of those paths.
 
-`scripts/paste-image` is the single exception, run only when an image is
-actually pasted: it reads the clipboard, hashes the bytes, reuses an existing
-blob on a hit, and renders the thumbnail.
+Two scripts exist, neither on an interaction path. `scripts/paste-image` runs
+when an image is actually pasted: it reads the clipboard, hashes the bytes,
+reuses an existing blob on a hit, and renders the thumbnail.
+`scripts/gc-blobs` runs when an attachment loses its last reference, and can
+sweep the whole store by hand.
 
 Rejected: a shell-and-jq backend in the style of the calendar plugin. It gives
 a CLI for free, but it forks bash and jq to tick a checkbox. Also rejected: a
