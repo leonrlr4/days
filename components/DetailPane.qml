@@ -80,16 +80,25 @@ Item {
           selectByMouse: true
           selectionColor: Qt.rgba(overlay.accent.r, overlay.accent.g, overlay.accent.b, 0.3)
 
-          onActiveFocusChanged: {
-            if (!activeFocus && pane.task && text !== pane.task.text) {
-              var value = text
+          // Saved as you type rather than when focus leaves. Waiting for focus
+          // meant a title typed and then abandoned -- by closing the overlay,
+          // or by pressing Escape -- was simply thrown away.
+          onTextChanged: if (activeFocus) titleCommit.restart()
+          onActiveFocusChanged: if (!activeFocus) titleCommit.triggered()
+
+          Timer {
+            id: titleCommit
+            interval: 200
+            onTriggered: {
+              if (!pane.task || titleEdit.text === pane.task.text) return
+              var value = titleEdit.text
               overlay.mutateSelected(function(t) { t.text = value; return t })
             }
           }
-          Keys.onEscapePressed: {
-            text = pane.task ? pane.task.text : ""
-            focus = false
-          }
+
+          // Escape leaves the field. It does not undo: the text is already on
+          // disk, so reverting here would throw away something already saved.
+          Keys.onEscapePressed: focus = false
         }
 
         Row {
@@ -215,16 +224,25 @@ Item {
             selectByMouse: true
             selectionColor: Qt.rgba(overlay.accent.r, overlay.accent.g, overlay.accent.b, 0.3)
 
+            onTextChanged: if (activeFocus) noteCommit.restart()
             onActiveFocusChanged: {
               if (activeFocus) return
-              var value = text
-              if (pane.task && value !== pane.task.note) {
-                overlay.mutateSelected(function(t) { t.note = value; return t })
-              }
+              noteCommit.triggered()
               overlay.editingNote = false
             }
+
+            Timer {
+              id: noteCommit
+              interval: 200
+              onTriggered: {
+                if (!pane.task || editor.text === pane.task.note) return
+                var value = editor.text
+                overlay.mutateSelected(function(t) { t.note = value; return t })
+              }
+            }
+
             Keys.onEscapePressed: {
-              text = pane.task ? pane.task.note : ""
+              noteCommit.triggered()
               overlay.editingNote = false
             }
           }

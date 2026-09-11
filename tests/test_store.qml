@@ -442,7 +442,7 @@ Item {
           function() {
             return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-11T11:30:00+08:00","title":"Standup","calendar_color":"#9a9cff"}]}')
           },
-          [{ at: "11:30", title: "Standup", color: "#9a9cff" }])
+          [{ at: "11:30", title: "Standup", color: "#9a9cff", url: "", location: "" }])
 
     check("an all-day event has no time to show",
           function() {
@@ -484,10 +484,10 @@ Item {
     check("a cache document round-trips",
           function() {
             var doc = Store.eventCacheDoc(
-              [{ at: "09:30", title: "Standup", color: "#6699ff" }], "2026-09-11T21:20:00Z")
+              [{ at: "09:30", title: "Standup", color: "#6699ff", url: "", location: "" }], "2026-09-11T21:20:00Z")
             return Store.parseEventCache(JSON.stringify(doc)).events
           },
-          [{ at: "09:30", title: "Standup", color: "#6699ff" }])
+          [{ at: "09:30", title: "Standup", color: "#6699ff", url: "", location: "" }])
 
     check("the cache records when it was fetched",
           function() {
@@ -521,6 +521,75 @@ Item {
             return Store.parseEventCache('{"v":1,"fetchedAt":"x","events":[{"at":"09:00"},{"at":"10:00","title":"Real"}]}').events.length
           },
           1)
+
+    // ---- what an event lets you do -----------------------------------------
+    check("a meeting link comes through",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T06:30:00+10:00","title":"Workshop","conference_url":"https://meet.google.com/abc-defg-hij"}]}')[0].url
+          },
+          "https://meet.google.com/abc-defg-hij")
+
+    check("a location comes through",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T09:00:00+08:00","title":"Lunch","location":"Din Tai Fung, Xinyi"}]}')[0].location
+          },
+          "Din Tai Fung, Xinyi")
+
+    check("an event with neither reports empty strings, not null",
+          function() {
+            var e = Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T09:00:00+08:00","title":"Focus","location":null,"conference_url":null}]}')[0]
+            return [e.url, e.location]
+          },
+          ["", ""])
+
+    check("the cache keeps the link and the location",
+          function() {
+            var doc = Store.eventCacheDoc(Store.parseEvents(
+              '{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T06:30:00+10:00","title":"Workshop","location":"Room 4","conference_url":"https://meet.google.com/x"}]}'),
+              "2026-09-12T00:00:00Z")
+            var back = Store.parseEventCache(JSON.stringify(doc)).events[0]
+            return [back.url, back.location]
+          },
+          ["https://meet.google.com/x", "Room 4"])
+
+    // ---- handing a URL to the desktop --------------------------------------
+    // Calendar entries are written by whoever sent the invite. The link goes to
+    // xdg-open, so anything but plain web traffic is refused rather than handed
+    // to whatever happens to claim that scheme.
+    check("an https link is allowed",
+          function() { return Store.safeUrl("https://meet.google.com/abc") },
+          "https://meet.google.com/abc")
+
+    check("plain http is allowed",
+          function() { return Store.safeUrl("http://example.com/room") },
+          "http://example.com/room")
+
+    check("a file:// link is refused",
+          function() { return Store.safeUrl("file:///etc/passwd") }, "")
+
+    check("a javascript: link is refused",
+          function() { return Store.safeUrl("javascript:alert(1)") }, "")
+
+    check("a scheme-less string is refused",
+          function() { return Store.safeUrl("meet.google.com/abc") }, "")
+
+    check("leading whitespace does not smuggle a scheme past the check",
+          function() { return Store.safeUrl("  javascript:alert(1)") }, "")
+
+    check("empty is refused",
+          function() { return Store.safeUrl("") }, "")
+
+    check("a map link is built for a place",
+          function() { return Store.mapUrl("Taipei 101") },
+          "https://www.google.com/maps/search/?api=1&query=Taipei%20101")
+
+    check("a place with punctuation and CJK survives encoding",
+          function() { return Store.mapUrl("鼎泰豐 信義店 & Co.") },
+          "https://www.google.com/maps/search/?api=1&query=" +
+          encodeURIComponent("鼎泰豐 信義店 & Co."))
+
+    check("no place means no map link",
+          function() { return Store.mapUrl("  ") }, "")
 
     exitTimer.start()
   }

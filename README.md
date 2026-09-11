@@ -25,6 +25,15 @@ Identical images are stored once no matter how many tasks point at them.
 **Notes in Markdown.** The note renders where it sits and becomes an editor
 when you click it. No preview toggle, no second mode.
 
+**Join, or find the place.** An event with a meeting link gets a `join` button
+and one with a location gets a `map`, which opens Google Maps on it. Both go
+through `xdg-open`, and both refuse anything that is not an ordinary `http`
+or `https` link — a calendar entry is written by whoever sent the invite.
+
+**Saved as you go.** There is no save button. Every change — a tick, a word in
+a note, a pasted screenshot — is on disk within a moment, and the corner says
+`saving…` and then `saved` so you can see it happen rather than hope.
+
 **Your calendar, beside it.** If [Omarchy Google Calendar and
 Clock](https://github.com/omarchy-plugins/omarchy-google-calendar-clock) is
 installed, the day's events appear above the task list. Days reads them through

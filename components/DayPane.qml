@@ -138,13 +138,39 @@ Item {
             Text {
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.md + Style.spacing.xxl + Style.space(46)
-              anchors.right: parent.right
+              anchors.right: actions.left
+              anchors.rightMargin: Style.spacing.lg
               anchors.verticalCenter: parent.verticalCenter
               text: modelData.title
               color: Qt.rgba(overlay.fg.r, overlay.fg.g, overlay.fg.b, 0.8)
               font.family: overlay.fontFamily
               font.pixelSize: Style.font.body
               elide: Text.ElideRight
+            }
+
+            // The two things you actually do with an event. Read-only still
+            // holds: opening a link changes nothing in the calendar.
+            Row {
+              id: actions
+              anchors.right: parent.right
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.spacing.md
+
+              PillButton {
+                overlay: pane.overlay
+                visible: modelData.url !== ""
+                label: "join"
+                highlight: true
+                onActivated: overlay.openExternal(modelData.url)
+              }
+
+              PillButton {
+                overlay: pane.overlay
+                visible: modelData.location !== ""
+                label: "map"
+                onActivated: overlay.openExternal(Store.mapUrl(modelData.location))
+              }
             }
           }
         }

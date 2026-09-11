@@ -51,6 +51,12 @@ Item {
   property string eventsWanted: ""
   property string pasteError: ""
 
+  // Saving is continuous, so the only question worth answering on screen is
+  // whether it has caught up. Unsaved while anything is pending, then "saved"
+  // for a moment so a change you just made visibly lands.
+  readonly property bool unsaved: Object.keys(root.dirtyDates).length > 0
+  property bool justSaved: false
+
   // Days are plain JS objects held in a property var, and mutateDay assigns
   // into that object rather than replacing it -- which notifies nothing. Any
   // binding that reads a day through dayCache has to depend on this counter,
@@ -178,13 +184,25 @@ Item {
       wrote = true
     }
     root.dirtyDates = ({})
-    if (wrote) indexFile.setText(JSON.stringify(root.index) + "\n")
+    if (wrote) {
+      indexFile.setText(JSON.stringify(root.index) + "\n")
+      root.justSaved = true
+      savedTimer.restart()
+    }
+  }
+
+  // Short enough that a change is on disk before you have finished reacting to
+  // it, long enough that holding a key does not write once per character.
+  Timer {
+    id: writeTimer
+    interval: 250
+    onTriggered: root.flush()
   }
 
   Timer {
-    id: writeTimer
-    interval: 400
-    onTriggered: root.flush()
+    id: savedTimer
+    interval: 1600
+    onTriggered: root.justSaved = false
   }
 
   // ---- index ---------------------------------------------------------------
@@ -345,6 +363,24 @@ Item {
     return "file://" + root.dataDir + "/thumbs/" + att.sha + ".webp"
   }
 
+  // ---- opening a link ---------------------------------------------------
+  // Only ever a meeting link or a map search, both already filtered to plain
+  // web traffic by Store.safeUrl. The overlay gets out of the way afterwards:
+  // you pressed join because you are going somewhere else.
+  // ---- opening a meeting or a place ------------------------------------------
+  // Both come from the calendar, so both are somebody else's text on its way to
+  // xdg-open. Store.safeUrl() has already refused anything that is not plain
+  // web traffic; this refuses to run at all on what is left over.
+  function openExternal(url) {
+    var safe = Store.safeUrl(url)
+    if (!safe) return
+    openProc.command = ["xdg-open", safe]
+    openProc.running = true
+    // You asked to be somewhere else. Staying open over the browser would be
+    // the wrong answer.
+    root.close()
+  }
+
   // ---- the day's events ----------------------------------------------------
   // The calendar plugin answers in about 2.4 seconds, so the day's events are
   // kept on disk and shown immediately while a fresh answer is fetched behind
@@ -430,6 +466,10 @@ Item {
 
   Process {
     id: collectProc
+  }
+
+  Process {
+    id: openProc
   }
 
   Process {
@@ -632,6 +672,24 @@ Item {
               }
             }
           }
+        }
+
+        // There is no save button and nothing to press, which leaves nothing to
+        // tell you it happened. This is the whole of the feedback: a word in
+        // the corner while a change is on its way, and a moment of "saved"
+        // after it lands.
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.spacing.panelPadding
+          anchors.bottom: parent.bottom
+          height: Style.space(34)
+          verticalAlignment: Text.AlignVCenter
+          text: root.unsaved ? "saving…" : (root.justSaved ? "saved" : "")
+          color: root.unsaved ? root.dimmer : root.accent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          opacity: text === "" ? 0 : 1
+          Behavior on opacity { NumberAnimation { duration: 220 } }
         }
 
         // ---- lightbox ---------------------------------------------------
