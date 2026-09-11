@@ -127,7 +127,7 @@ Two consequences worth recording, because they are easy to undo by accident:
 - The schedule is drawn as a coloured rail, not as cards. Cards in this UI mean
   "editable"; these events belong to another plugin and cannot be edited here.
 - The note renders as Markdown at rest through `Text.MarkdownText` and becomes
-  a `TextArea` on click. One control, no preview/edit toggle, no Markdown
+  a `TextEdit` on click. One control, no preview/edit toggle, no Markdown
   library.
 
 ## Scope held out of the first version
