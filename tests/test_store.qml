@@ -591,6 +591,31 @@ Item {
     check("no place means no map link",
           function() { return Store.mapUrl("  ") }, "")
 
+    // ---- turning a path into a file: URL ------------------------------------
+    // FolderListModel takes a URL, not a path. Concatenating "file://" onto a
+    // path leaves # and ? to be read as fragment and query separators, so a
+    // home directory containing either points the model somewhere else -- and
+    // it fails silently, with no status change to notice.
+    check("an ordinary path passes through",
+          function() { return Store.fileUrl("/home/leon/.local/share/x/days") },
+          "file:///home/leon/.local/share/x/days")
+
+    check("a space is encoded",
+          function() { return Store.fileUrl("/home/a b/days") }, "file:///home/a%20b/days")
+
+    check("a hash is encoded rather than starting a fragment",
+          function() { return Store.fileUrl("/home/a#b/days") }, "file:///home/a%23b/days")
+
+    check("a question mark is encoded rather than starting a query",
+          function() { return Store.fileUrl("/home/a?b/days") }, "file:///home/a%3Fb/days")
+
+    check("separators survive",
+          function() { return Store.fileUrl("/a/b/c") }, "file:///a/b/c")
+
+    check("a non-ASCII path is encoded",
+          function() { return Store.fileUrl("/home/使用者/days") },
+          "file:///home/" + encodeURIComponent("使用者") + "/days")
+
     exitTimer.start()
   }
 }

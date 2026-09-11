@@ -13,8 +13,12 @@ set -uo pipefail
 # on someone's PATH can stand in for xdg-open.
 export PATH="/usr/local/bin:/usr/bin:/bin"
 
+# Case-insensitive, to agree with Store.safeUrl's /i. They have to match: the
+# QML side decides whether to hand the link over and then closes the overlay,
+# so a stricter check here means the overlay vanishes and nothing opens, with
+# no message anywhere.
 url=${1:-}
-if [[ ! "$url" =~ ^https?://[^[:space:]]+$ ]]; then
+if [[ ! "${url,,}" =~ ^https?://[^[:space:]]+$ ]]; then
   echo "open-url: refusing to open: $url" >&2
   exit 2
 fi

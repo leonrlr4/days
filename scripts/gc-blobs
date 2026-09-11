@@ -23,10 +23,15 @@ die() { jq -cn --arg e "$1" '{ok: false, error: $e}'; exit 0; }
 
 DIR=""
 ONLY=""
+
+# shift 2 does nothing when only the flag is left, so the loop would spin on
+# the same argument forever.
+need_value() { (($# >= 2)) || die "$1 needs a value"; }
+
 while (($#)); do
   case "$1" in
-    --dir) DIR="${2:-}"; shift 2 ;;
-    --sha) ONLY="${2:-}"; shift 2 ;;
+    --dir) need_value "$@"; DIR="$2"; shift 2 ;;
+    --sha) need_value "$@"; ONLY="$2"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -73,6 +78,12 @@ sweep() { # sweep <sha>
 if [[ -n "$ONLY" ]]; then
   sweep "$ONLY"
 else
+  # paste-image stages through mktemp and renames into place. Killed in
+  # between, it leaves a full-size copy of the image that nothing references
+  # and nothing else looks at. An hour is well past any paste still in flight.
+  find "$DIR/blobs" "$DIR/thumbs" -maxdepth 1 -type f -name 'staging.*' -mmin +60 \
+    -delete 2>/dev/null
+
   declare -A seen=()
   for blob in "$DIR"/blobs/*; do
     name=$(basename "$blob")

@@ -98,6 +98,28 @@ out=$("$SCRIPT" --dir "$D" --sha "../days/2026-09-11" 2>/dev/null)
 check "a hash that is not a hash is refused" "false" "$(jq -r .ok <<<"$out")"
 check "and the day file it pointed at survives" "yes" "$(exists "$D/days/2026-09-11.json")"
 
+# --- staging leftovers -------------------------------------------------------
+# paste-image stages through mktemp before renaming into place. A kill in
+# between leaves a full-size copy of the image behind, and nothing else ever
+# looks at it.
+D="$WORK/staging"; seed "$D"
+printf 'x' > "$D/blobs/staging.OLDFILE1"
+printf 'x' > "$D/thumbs/staging.OLDFILE2"
+touch -d '3 hours ago' "$D/blobs/staging.OLDFILE1" "$D/thumbs/staging.OLDFILE2"
+printf 'x' > "$D/blobs/staging.FRESHONE"
+out=$("$SCRIPT" --dir "$D" 2>/dev/null)
+check "a stale staging file is swept" "no" "$(exists "$D/blobs/staging.OLDFILE1")"
+check "including under thumbs" "no" "$(exists "$D/thumbs/staging.OLDFILE2")"
+# A paste in flight right now must not have its staging file pulled out from
+# under it.
+check "a staging file still in use is left alone" "yes" "$(exists "$D/blobs/staging.FRESHONE")"
+check "and referenced blobs are still untouched" "yes" "$(exists "$D/blobs/aa11aa11.png")"
+
+# --- bad arguments -----------------------------------------------------------
+timeout 5 "$SCRIPT" --dir >/dev/null 2>&1
+check "a flag with no value exits instead of spinning" "1" \
+  "$([[ $? -ne 124 ]] && echo 1 || echo 0)"
+
 if (( failed )); then
   printf 'FAIL %d/%d gc-blobs\n' "$failed" "$checks" >&2
   exit 1

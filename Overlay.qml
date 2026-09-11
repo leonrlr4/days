@@ -224,7 +224,12 @@ Item {
     // Missing or from an older schema. Rebuilding is the one path that reads
     // every day file, and it runs only here.
     root.rebuilding = true
-    dayFiles.folder = "file://" + root.dataDir + "/days"
+    // Cleared first so re-assigning the same folder still counts as a change:
+    // FolderListModel emits nothing when the value is identical, and the
+    // rebuild would silently never run.
+    dayFiles.folder = ""
+    dayFiles.folder = Store.fileUrl(root.dataDir + "/days")
+    rebuildFallback.restart()
   }
 
   function rebuildFrom(names) {
@@ -461,10 +466,26 @@ Item {
 
     onStatusChanged: {
       if (!root.rebuilding || status !== FolderListModel.Ready) return
+      rebuildFallback.stop()
       root.rebuilding = false
       var names = []
       for (var i = 0; i < count; i++) names.push(get(i, "fileName"))
       root.rebuildFrom(names)
+    }
+  }
+
+  // A folder that does not exist -- which is every first run, before the first
+  // task is written -- leaves the status at Null and emits no change at all,
+  // so onStatusChanged above never fires and the rebuild never happens. The
+  // `ls` this replaced got that case for free: it failed, and the empty output
+  // still arrived. This is that behaviour put back.
+  Timer {
+    id: rebuildFallback
+    interval: 1500
+    onTriggered: {
+      if (!root.rebuilding) return
+      root.rebuilding = false
+      root.rebuildFrom([])
     }
   }
 

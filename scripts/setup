@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Put Days where it belongs on the desktop, and say what it changed.
 #
-#   scripts/setup [--check] [--quiet] [--key "SUPER + M"] [--no-key]
+#   scripts/setup [--check] [--quiet] [--key "SUPER + M"] [--no-key] [--no-enable]
 #
 # Being enabled is not a property of the plugin directory. It is one line in
 # ~/.config/omarchy/shell.json. When that file is reset -- see the startup
@@ -34,13 +34,22 @@ CHECK=0
 QUIET=0
 KEY="SUPER + M"
 WANT_KEY=1
+WANT_ENABLE=1
+
+# shift 2 does nothing when only the flag is left, so the loop would spin on
+# the same argument forever at 100% CPU.
+need_value() { (($# >= 2)) || { echo "setup: $1 needs a value" >&2; exit 2; }; }
 
 while (($#)); do
   case "$1" in
     --check) CHECK=1; shift ;;
     --quiet) QUIET=1; shift ;;
-    --key) KEY="${2:-}"; shift 2 ;;
+    --key) need_value "$@"; KEY="$2"; shift 2 ;;
     --no-key) WANT_KEY=0; shift ;;
+    # Leaves shell.json alone. The test suite uses it: omarchy plugin
+    # list/enable talk to the running shell over IPC and ignore
+    # XDG_CONFIG_HOME, so without it a test run would rewrite the real config.
+    --no-enable) WANT_ENABLE=0; shift ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "setup: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -51,8 +60,13 @@ done
 # escaping, only the grammar Hyprland actually accepts is allowed through:
 # modifier words joined by +, and a key name, keycode or symbol. Quotes,
 # backslashes and newlines have no way in.
-if [[ ! "$KEY" =~ ^[A-Za-z0-9_]+([[:space:]]*\+[[:space:]]*[A-Za-z0-9_]+)*$ &&
-      ! "$KEY" =~ ^[A-Za-z0-9_]+([[:space:]]*\+[[:space:]]*[A-Za-z0-9_]+)*[[:space:]]*\+[[:space:]]*code:[0-9]+$ ]]; then
+# [[:blank:]], not [[:space:]]: the latter matches newline and carriage
+# return, which would let "SUPER +\nM" through. That leaves the o.bind( line
+# unterminated, and an unterminated string stops the *whole* of bindings.lua
+# from parsing -- every other keybinding in it dies with it.
+if [[ "$KEY" == *$'\n'* || "$KEY" == *$'\r'* ]] ||
+   [[ ! "$KEY" =~ ^[A-Za-z0-9_]+([[:blank:]]*\+[[:blank:]]*[A-Za-z0-9_]+)*$ &&
+      ! "$KEY" =~ ^[A-Za-z0-9_]+([[:blank:]]*\+[[:blank:]]*[A-Za-z0-9_]+)*[[:blank:]]*\+[[:blank:]]*code:[0-9]+$ ]]; then
   echo "setup: not a valid key: $KEY" >&2
   echo "setup: expected something like \"SUPER + M\", \"CTRL + ALT + comma\" or \"SUPER + code:20\"" >&2
   exit 2
@@ -81,8 +95,11 @@ command -v omarchy >/dev/null || { echo "setup: omarchy is required" >&2; exit 1
 # gone. That is why this script is meant to be run by hand from a settled
 # session, and never from a boot hook.
 # --- is the plugin loaded? --------------------------------------------------
-state=$(omarchy plugin list 2>/dev/null | awk -v id="$ID" '$1 == id { print $2 }')
+state=$(((WANT_ENABLE)) && omarchy plugin list 2>/dev/null | awk -v id="$ID" '$1 == id { print $2 }')
+((WANT_ENABLE)) || state="skipped"
 case "$state" in
+  skipped)
+    ;;
   enabled)
     ok "plugin enabled"
     ;;

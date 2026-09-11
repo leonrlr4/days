@@ -36,10 +36,15 @@ LIMITS=(-limit memory 256MiB -limit map 512MiB -limit disk 1GiB -limit time 30)
 
 DIR=""
 FILE=""
+
+# shift 2 does nothing when only the flag is left, so the loop would spin on
+# the same argument forever.
+need_value() { (($# >= 2)) || die "$1 needs a value"; }
+
 while (($#)); do
   case "$1" in
-    --dir) DIR="${2:-}"; shift 2 ;;
-    --file) FILE="${2:-}"; shift 2 ;;
+    --dir) need_value "$@"; DIR="$2"; shift 2 ;;
+    --file) need_value "$@"; FILE="$2"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -55,7 +60,11 @@ SRC="$TMP/src"
 
 if [[ -n "$FILE" ]]; then
   [[ -f "$FILE" ]] || die "no such file: $FILE"
-  cp -- "$FILE" "$SRC" || die "could not read $FILE"
+  # Bounded at the read, not after it: $SRC lives in /tmp, which is RAM here,
+  # so copying first and measuring second means a huge input is already
+  # resident before anything rejects it. One byte past the ceiling is enough
+  # to know it is over.
+  head -c $((MAX_BYTES + 1)) -- "$FILE" > "$SRC" || die "could not read $FILE"
 else
   command -v wl-paste >/dev/null || die "wl-clipboard is not installed"
   # Take the clipboard's own image type when it offers one. Asking for a type
@@ -63,14 +72,15 @@ else
   # than whatever it already has.
   mime=$(wl-paste --list-types 2>/dev/null | grep -m1 '^image/') || mime=""
   if [[ -n "$mime" ]]; then
-    wl-paste --no-newline --type "$mime" > "$SRC" 2>/dev/null || die "could not read the clipboard"
+    wl-paste --no-newline --type "$mime" 2>/dev/null |
+      head -c $((MAX_BYTES + 1)) > "$SRC" || die "could not read the clipboard"
   else
     # Fall back to a copied path, trimmed of the file:// a file manager adds.
     path=$(wl-paste --no-newline 2>/dev/null | head -1)
     path=${path#file://}
     path=$(printf '%b' "${path//%/\\x}")
     [[ -n "$path" && -f "$path" ]] || die "the clipboard holds no image"
-    cp -- "$path" "$SRC" || die "could not read $path"
+    head -c $((MAX_BYTES + 1)) -- "$path" > "$SRC" || die "could not read $path"
   fi
 fi
 
@@ -103,6 +113,10 @@ blob="$DIR/blobs/$sha.$ext"
 thumb="$DIR/thumbs/$sha.webp"
 mkdir -p "$DIR/blobs" "$DIR/thumbs" || die "could not write to $DIR"
 
+# Staging files are named without a leading dot so the collector's glob can see
+# them: a kill between mktemp and mv would otherwise leave a full-size copy of
+# the image that no sweep could ever reclaim.
+#
 # The hash is derived from the image, so every path written below is
 # predictable by whoever supplies it. Staging through mktemp -- which creates
 # exclusively, never following an existing link -- and renaming into place
@@ -112,7 +126,7 @@ mkdir -p "$DIR/blobs" "$DIR/thumbs" || die "could not write to $DIR"
 deduped=true
 if [[ ! -f "$blob" || -L "$blob" ]]; then
   deduped=false
-  staged=$(mktemp "$DIR/blobs/.staging.XXXXXXXX") || die "could not stage the image"
+  staged=$(mktemp "$DIR/blobs/staging.XXXXXXXX") || die "could not stage the image"
   cp -- "$SRC" "$staged" && mv -f -- "$staged" "$blob" || {
     rm -f -- "$staged"
     die "could not store the image"
@@ -122,7 +136,7 @@ fi
 if [[ ! -f "$thumb" || -L "$thumb" ]]; then
   # 320 on the long edge, shrink-only. Lists load nothing but these, so the
   # bound is the reason they stay cheap to render.
-  staged=$(mktemp "$DIR/thumbs/.staging.XXXXXXXX") || die "could not stage the thumbnail"
+  staged=$(mktemp "$DIR/thumbs/staging.XXXXXXXX") || die "could not stage the thumbnail"
   magick "${LIMITS[@]}" "$SRC[0]" -auto-orient -resize '320x320>' -quality 82 "webp:$staged" 2>/dev/null &&
     mv -f -- "$staged" "$thumb" || {
       rm -f -- "$staged"

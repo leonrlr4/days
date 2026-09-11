@@ -25,7 +25,11 @@ fresh() {
   echo '{"version":1,"plugins":[{"id":"leonrlr4.days"}]}' > "$WORK/cfg/omarchy/shell.json"
 }
 
-run() { XDG_CONFIG_HOME="$WORK/cfg" "$SCRIPT" "$@" 2>&1; }
+# --no-enable keeps these tests off the live shell: omarchy plugin list/enable
+# go through IPC into the running shell and ignore XDG_CONFIG_HOME, so without
+# it a test run on a machine where the plugin is disabled would rewrite the
+# real ~/.config/omarchy/shell.json.
+run() { XDG_CONFIG_HOME="$WORK/cfg" "$SCRIPT" --no-enable "$@" 2>&1; }
 
 # The key ends up inside a quoted Lua string. Anything that can close that
 # string can run whatever it likes the next time Hyprland loads its config.
@@ -40,6 +44,34 @@ fresh
 out=$(run --key 'SUPER + M
 os.execute("x")')
 check "a key containing a newline is refused" "1" "$(grep -c 'not a valid key' <<<"$out")"
+
+# A newline *between* otherwise valid tokens is the dangerous one: it leaves
+# the o.bind( line unterminated, which stops the whole of bindings.lua from
+# parsing and takes every other keybinding down with it.
+fresh
+out=$(run --key "$(printf 'SUPER +\nM')")
+check "a newline between tokens is refused" "1" "$(grep -c 'not a valid key' <<<"$out")"
+check "and bindings.lua is left alone" "0" \
+  "$(grep -c 'leonrlr4.days' "$WORK/cfg/hypr/bindings.lua")"
+
+fresh
+out=$(run --key "$(printf 'SUPER\r + M')")
+check "a carriage return is refused" "1" "$(grep -c 'not a valid key' <<<"$out")"
+
+# Every binding this writes has to leave the file loadable. luac -p parses
+# without running, which is exactly the check Hyprland's loader would fail.
+if command -v luac >/dev/null; then
+  fresh
+  run --key "SUPER + M" >/dev/null
+  check "the file still parses as Lua afterwards" "0" \
+    "$(luac -p "$WORK/cfg/hypr/bindings.lua" >/dev/null 2>&1; echo $?)"
+fi
+
+# An option with no value must not leave the parser looping on itself.
+fresh
+timeout 5 env XDG_CONFIG_HOME="$WORK/cfg" "$SCRIPT" --key >/dev/null 2>&1
+check "a flag with no value exits instead of spinning" "1" \
+  "$([[ $? -ne 124 ]] && echo 1 || echo 0)"
 
 fresh
 out=$(run --key 'SUPER + \\')
