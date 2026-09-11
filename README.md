@@ -89,6 +89,11 @@ install already has.
 | `dd` | delete | `u` | undo the delete |
 | `Esc` | close | | |
 
+Omarchy's own `SUPER + V` works too. It forwards `Ctrl+V`, or `Shift+Insert`
+when it decides the focused window is a terminal — and an overlay is a layer
+surface rather than a window, so that check sees whatever was behind it. Both
+are accepted here.
+
 Clicking works everywhere too: a date in the month grid, a checkbox, a row, the
 note, a thumbnail. Right-click a thumbnail to remove it.
 

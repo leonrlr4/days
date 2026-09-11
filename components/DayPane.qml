@@ -172,9 +172,14 @@ Item {
           TaskRow {
             width: body.width
             overlay: pane.overlay
-            task: overlay.readDay(modelData.date).tasks.filter(function(t) {
-              return t.id === modelData.id
-            })[0] || { id: "", text: modelData.text, done: false, note: "", atts: [], subs: [] }
+            task: {
+              overlay.revision         // dayCache is mutated in place
+              var found = overlay.readDay(modelData.date).tasks.filter(function(t) {
+                return t.id === modelData.id
+              })[0]
+              return found || { id: "", text: modelData.text, done: false,
+                                note: "", atts: [], subs: [] }
+            }
             sourceDate: modelData.date
             selected: overlay.selId === modelData.id && overlay.selDate === modelData.date
             onToggled: overlay.toggleDone(modelData.date, modelData.id)

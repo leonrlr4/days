@@ -34,8 +34,10 @@ Item {
     }
     Text {
       anchors.horizontalCenter: parent.horizontalCenter
-      text: "pick one from the day"
-      color: overlay.dimmer
+      // Doubles as the place a failed paste explains itself: pasting with
+      // nothing selected is otherwise completely silent.
+      text: overlay.pasteError ? overlay.pasteError : "pick one from the day"
+      color: overlay.pasteError ? overlay.urgent : overlay.dimmer
       font.family: overlay.fontFamily
       font.pixelSize: Style.font.caption
     }

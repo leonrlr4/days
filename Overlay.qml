@@ -51,12 +51,20 @@ Item {
   property string eventsWanted: ""
   property string pasteError: ""
 
+  // Days are plain JS objects held in a property var, and mutateDay assigns
+  // into that object rather than replacing it -- which notifies nothing. Any
+  // binding that reads a day through dayCache has to depend on this counter,
+  // or it goes on rendering the task as it was before the edit.
+  // tests/test_qml.qml pins the behaviour.
+  property int revision: 0
+
   property var dayCache: ({})
   property var eventCache: ({})
   property var dirtyDates: ({})
 
   readonly property var carried: Store.carriedOver(root.index, root.today)
   readonly property var selTask: {
+    root.revision                      // re-evaluate after every edit
     if (!root.selId) return null
     var d = root.readDay(root.selDate)
     for (var i = 0; i < d.tasks.length; i++) {
@@ -144,6 +152,7 @@ Item {
   function mutateDay(date, fn) {
     var next = fn(root.readDay(date))
     root.dayCache[date] = next
+    root.revision++
     if (date === root.date) root.day = next
     root.index = Store.applyDay(root.index, next)
     var dirty = root.dirtyDates
@@ -240,6 +249,7 @@ Item {
 
     root.dayCache[date] = moved.from
     root.dayCache[root.today] = moved.to
+    root.revision++
     root.index = Store.applyDay(Store.applyDay(root.index, moved.from), moved.to)
     var dirty = root.dirtyDates
     dirty[date] = true
@@ -293,7 +303,11 @@ Item {
 
   // ---- attachments ---------------------------------------------------------
   function pasteImage() {
-    if (!root.selId || pasteProc.running) return
+    if (!root.selId) {
+      root.pasteError = "select a task first — an image attaches to one"
+      return
+    }
+    if (pasteProc.running) return
     root.pasteError = ""
     pasteProc.running = true
   }
@@ -525,6 +539,18 @@ Item {
             event.accepted = true; return
           case Qt.Key_V:
             if (event.modifiers & Qt.ControlModifier) {
+              root.pasteImage()
+              event.accepted = true
+              return
+            }
+            break
+          case Qt.Key_Insert:
+            // Omarchy's SUPER+V is "Universal paste": it forwards Ctrl+V, or
+            // Shift+Insert when it decides the focused window is a terminal.
+            // An overlay is a layer surface, not a window, so that check sees
+            // whatever was focused behind us -- usually a terminal. Accepting
+            // both is what makes SUPER+V work in here.
+            if (event.modifiers & Qt.ShiftModifier) {
               root.pasteImage()
               event.accepted = true
               return

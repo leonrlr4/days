@@ -33,6 +33,13 @@ Item {
     }
   }
 
+  // 就地改一個 property var 裡的物件,不會讓依賴它的 binding 重算。
+  Item {
+    id: mutationProbe
+    property var box: ({ n: 1 })
+    readonly property int derived: box.n
+  }
+
   Repeater {
     id: plainRepeater
     model: ["alpha", "beta"]
@@ -117,6 +124,21 @@ Item {
           plainRepeater.itemAt(0).seen, "alpha")
     check("a delegate that declares a required property does not",
           requiringRepeater.itemAt(0).seen, "undefined")
+
+    // ---- property var and in-place mutation ------------------------------
+    // The overlay keeps each day as a plain JS object in a property var and the
+    // detail pane binds through it. Assigning into that object does not notify
+    // anything, so the pane kept rendering the note, subtasks and attachments
+    // as they were before the edit -- and only refreshed when the selection
+    // changed, which read as "you have to click it before it shows".
+    // Anything deriving from a mutated object needs an explicit revision to
+    // depend on. Pinned here because nothing about the code looks wrong.
+    check("a binding sees the initial value", mutationProbe.derived, 1)
+    mutationProbe.box.n = 2
+    check("mutating the object in place does not re-evaluate the binding",
+          mutationProbe.derived, 1)
+    mutationProbe.box = { n: 3 }
+    check("reassigning the property does", mutationProbe.derived, 3)
 
     settleTimer.start()
   }
