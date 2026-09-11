@@ -17,19 +17,28 @@
   },
   "barWidget": {
     "displayName": "Days",
-    "description": "Today's open tasks on the bar; the day itself in an overlay.",
+    "description": "The date, the time, and how much of the day is still open.",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
-      "hideWhenClear": false
+      "format": "ddd d MMM HH:mm",
+      "verticalFormat": "HH\nmm"
     },
     "schema": [
       {
-        "key": "hideWhenClear",
-        "type": "boolean",
-        "label": "Hide the pill when nothing is open",
-        "defaultValue": false
+        "key": "format",
+        "type": "string",
+        "label": "Clock format",
+        "description": "Qt date format, e.g. 'ddd d MMM HH:mm' or 'dddd HH:mm'.",
+        "defaultValue": "ddd d MMM HH:mm"
+      },
+      {
+        "key": "verticalFormat",
+        "type": "string",
+        "label": "Clock format on a vertical bar",
+        "description": "Use \\n for line breaks.",
+        "defaultValue": "HH\nmm"
       }
     ]
   }

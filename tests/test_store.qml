@@ -474,6 +474,54 @@ Item {
           },
           ["all day", "early", "late"])
 
+    // ---- the event cache ---------------------------------------------------
+    // Asking the calendar plugin for a day costs ~2.4s, so the answer is kept
+    // on disk and shown immediately on the next open while a fresh one is
+    // fetched behind it. A cache file that cannot be trusted must read as
+    // "nothing cached", never as "no events" -- the latter would render an
+    // empty schedule over a day that has meetings.
+
+    check("a cache document round-trips",
+          function() {
+            var doc = Store.eventCacheDoc(
+              [{ at: "09:30", title: "Standup", color: "#6699ff" }], "2026-09-11T21:20:00Z")
+            return Store.parseEventCache(JSON.stringify(doc)).events
+          },
+          [{ at: "09:30", title: "Standup", color: "#6699ff" }])
+
+    check("the cache records when it was fetched",
+          function() {
+            var doc = Store.eventCacheDoc([], "2026-09-11T21:20:00Z")
+            return Store.parseEventCache(JSON.stringify(doc)).fetchedAt
+          },
+          "2026-09-11T21:20:00Z")
+
+    check("a day with no events caches as an empty list, not as nothing",
+          function() {
+            var doc = Store.eventCacheDoc([], "2026-09-11T21:20:00Z")
+            var back = Store.parseEventCache(JSON.stringify(doc))
+            return back !== null && back.events.length === 0
+          },
+          true)
+
+    check("a truncated cache file reads as nothing cached",
+          function() { return Store.parseEventCache('{"v":1,"eve') }, null)
+
+    check("no cache file reads as nothing cached",
+          function() { return Store.parseEventCache("") }, null)
+
+    check("a cache from an older schema is ignored",
+          function() { return Store.parseEventCache('{"v":0,"events":[]}') }, null)
+
+    check("a cache whose events are not a list is ignored",
+          function() { return Store.parseEventCache('{"v":1,"events":"soon"}') }, null)
+
+    check("an entry missing its title is dropped rather than rendered blank",
+          function() {
+            return Store.parseEventCache('{"v":1,"fetchedAt":"x","events":[{"at":"09:00"},{"at":"10:00","title":"Real"}]}').events.length
+          },
+          1)
+
     exitTimer.start()
   }
 }

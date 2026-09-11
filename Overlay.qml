@@ -48,6 +48,7 @@ Item {
   property bool editingNote: false
   property var undoEntry: null
   property var events: []
+  property string eventsWanted: ""
   property string pasteError: ""
 
   property var dayCache: ({})
@@ -331,12 +332,28 @@ Item {
   }
 
   // ---- the day's events ----------------------------------------------------
+  // The calendar plugin answers in about 2.4 seconds, so the day's events are
+  // kept on disk and shown immediately while a fresh answer is fetched behind
+  // them. Holding l must not queue a subprocess per day either, hence the
+  // debounce and the single flight below.
+  function eventPath(date) { return root.dataDir + "/events/" + date + ".json" }
+
   function loadEvents(date) {
     if (root.eventCache[date]) {
       root.events = root.eventCache[date]
-      return
+    } else {
+      eventReader.path = root.eventPath(date)
+      var cached = Store.parseEventCache(eventReader.text())
+      root.events = cached ? cached.events : []
+      if (cached) root.eventCache[date] = cached.events
     }
-    root.events = []
+    root.eventsWanted = date
+    eventDebounce.restart()
+  }
+
+  function fetchEvents() {
+    var date = root.eventsWanted
+    if (!date || eventsProc.running) return
     eventsProc.date = date
     eventsProc.command = [root.eventsScript, date, date]
     eventsProc.running = true
@@ -345,7 +362,11 @@ Item {
   function eventsArrived(date, text) {
     var list = Store.parseEvents(text)
     root.eventCache[date] = list
+    eventWriter.path = root.eventPath(date)
+    eventWriter.setText(JSON.stringify(Store.eventCacheDoc(list, new Date().toISOString())) + "\n")
     if (root.date === date) root.events = list
+    // The day may have moved on while that was in flight.
+    if (root.eventsWanted !== date) eventDebounce.restart()
   }
 
   // ---- files and processes -------------------------------------------------
@@ -404,6 +425,25 @@ Item {
       waitForEnd: true
       onStreamFinished: root.eventsArrived(eventsProc.date, text)
     }
+  }
+
+  Timer {
+    id: eventDebounce
+    interval: 250
+    onTriggered: root.fetchEvents()
+  }
+
+  FileView {
+    id: eventReader
+    blockLoading: true
+    blockAllReads: true
+    printErrors: false
+  }
+
+  FileView {
+    id: eventWriter
+    atomicWrites: true
+    printErrors: false
   }
 
   // ---- the surface ---------------------------------------------------------

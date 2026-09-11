@@ -29,10 +29,19 @@ when you click it. No preview toggle, no second mode.
 Clock](https://github.com/omarchy-plugins/omarchy-google-calendar-clock) is
 installed, the day's events appear above the task list. Days reads them through
 that plugin's own read-only bridge and never creates, changes or syncs
-anything.
+anything. That bridge takes a couple of seconds to answer, so each day's events
+are cached on disk: the schedule is there the moment the overlay opens, and a
+fresh answer replaces it when it arrives.
 
-**On the bar.** A pill shows how many tasks are open today. Clicking it opens
-the overlay.
+**On the bar, instead of a clock.** The widget is a clock first — the same
+`ddd d MMM HH:mm` a bar clock shows, on a minute-precision timer rather than a
+one-second one — with the day's load beside it. The count is everything still
+open that was due today or earlier, it turns urgent when any of it is overdue,
+and it disappears entirely when the day is clear, so a quiet day reads as a
+plain clock. Clicking opens the overlay.
+
+If you run a bar that colourises each widget to a single hue, set that widget's
+`iconColor` to `none` or the count will be tinted to match the clock.
 
 ## Install
 
@@ -75,11 +84,13 @@ note, a thumbnail. Right-click a thumbnail to remove it.
   blobs/<sha256>.<ext>   images, stored under their own content hash
   thumbs/<sha256>.webp   320px renditions, the only thing lists load
   index.json             a cache: open tasks, per-day counts, image refcounts
+  events/YYYY-MM-DD.json a cache of the day's calendar events
 ```
 
 Plain JSON, one small file per day — readable, greppable, and trivial to back
-up or put in a git repo. `index.json` is derived and can be deleted at any
-time; it is rebuilt from the day files on the next open.
+up or put in a git repo. `index.json` and `events/` are both derived and can be
+deleted at any time; the index is rebuilt from the day files on the next open,
+and the events are re-fetched.
 
 Removing the last reference to an image runs `scripts/gc-blobs`, which
 re-derives what is still referenced from the day files themselves before
