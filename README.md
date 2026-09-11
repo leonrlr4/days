@@ -49,21 +49,18 @@ omarchy plugin add leonrlr4/days
 and installs a post-boot hook. It is idempotent — run it any time, and
 `scripts/setup --check` reports what is missing without changing anything.
 
-The hook matters more than it sounds. Whether a plugin is enabled lives in
-`~/.config/omarchy/shell.json`. When that file is reset the plugin is still on
-disk, the key is still bound, Hyprland still has it, and pressing it does
-nothing, because what it toggles is no longer loaded — a failure with nothing
-on screen to explain it. The hook repairs that on the next login. `--no-hook`
-skips it.
+`scripts/setup` deliberately installs no boot hook, and you should not add one.
+Enabling a plugin is a settings change, and the shell holds its live config in
+a property initialised to the factory defaults and replaced only when
+`shell.json` finishes loading — asynchronously. Every settings change copies
+whatever that property holds *right now* and writes the whole thing back, so a
+change made inside that window persists the defaults over the user's entire
+configuration. Hyprland runs post-boot hooks two seconds after loading its
+config, squarely inside it.
 
-It reads `shell.json` before it does anything, and exits without touching the
-shell when the plugin is already listed there — which is almost always. That
-is deliberate. The shell holds its live config in a property initialised to the
-factory defaults and replaced when `shell.json` finishes loading, and every
-settings change copies whatever that property holds *right now* and writes the
-whole thing back. A change made before the load completes therefore persists
-the defaults over the user's config. A hook that reached for `omarchy plugin
-enable` on every boot would land in that window every time.
+Run `scripts/setup` again by hand if something ever resets `shell.json`; the
+plugin, its data and your keybinding are all untouched by that, and one command
+puts the last piece back.
 
 Pick a different key with `--key "SUPER + D"`, or skip the binding with
 `--no-key`. `SUPER + M` is free in a stock Omarchy install; `SUPER + T` toggles

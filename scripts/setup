@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Put Days where it belongs on the desktop, and say what it changed.
 #
-#   scripts/setup [--check] [--quiet] [--wait]
-#                 [--key "SUPER + M"] [--no-key] [--no-hook]
+#   scripts/setup [--check] [--quiet] [--key "SUPER + M"] [--no-key]
 #
 # Being enabled is not a property of the plugin directory. It is one line in
 # ~/.config/omarchy/shell.json. When that file is reset -- see the startup
@@ -12,31 +11,30 @@
 #
 # So this is idempotent and re-runnable: it reports what is already right,
 # changes only what is not, and --check changes nothing and exits non-zero when
-# something is missing. It also installs a post-boot hook that runs it on every
-# login, so a reset repairs itself before you notice.
+# something is missing. Run it again whenever something has reset shell.json.
+#
+# It deliberately does NOT install a boot hook. Enabling a plugin is a settings
+# change, and a settings change made while the shell is still loading
+# shell.json persists the factory defaults over the whole configuration -- see
+# the note below. Anything that runs at boot is in that window.
 set -uo pipefail
 
 ID="leonrlr4.days"
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
 BINDINGS="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua"
-HOOK="$CONFIG/hooks/post-boot.d/$ID"
 
 CHECK=0
 QUIET=0
-WAIT=0
 KEY="SUPER + M"
 WANT_KEY=1
-WANT_HOOK=1
 
 while (($#)); do
   case "$1" in
     --check) CHECK=1; shift ;;
     --quiet) QUIET=1; shift ;;
-    --wait) WAIT=1; shift ;;
     --key) KEY="${2:-}"; shift 2 ;;
     --no-key) WANT_KEY=0; shift ;;
-    --no-hook) WANT_HOOK=0; shift ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "setup: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -52,7 +50,7 @@ note()   { ((QUIET)) || printf '    %s\n' "$1"; }
 
 command -v omarchy >/dev/null || { echo "setup: omarchy is required" >&2; exit 1; }
 
-# --- the startup window, and why this does not just call enable ------------
+# --- the startup window ------------------------------------------------------
 #
 # shell.qml keeps the live config in `shellConfig`, initialised to the factory
 # defaults and replaced when ~/.config/omarchy/shell.json finishes loading --
@@ -60,49 +58,10 @@ command -v omarchy >/dev/null || { echo "setup: omarchy is required" >&2; exit 1
 # mutateShellConfig(), which copies whatever `shellConfig` holds *right now*,
 # applies the change and writes the whole thing back.
 #
-# So any mutation made before that load completes copies the defaults and
-# persists them over the user's file. The bar, every widget and every other
-# plugin are gone, and the only trace is a shell.json the size of the shipped
-# default. Calling `omarchy plugin enable` from a post-boot hook lands squarely
-# in that window, which turns an occasional race into one that fires on every
-# single boot.
-#
-# Hence: read the file first and do nothing at all when we are already in it --
-# the normal case, and no IPC means no risk. Only when genuinely absent is a
-# mutation needed, and then wait for proof that the shell is working from the
-# file rather than from its defaults.
-if ((WAIT)); then
-  SHELL_JSON="$CONFIG/shell.json"
-
-  if command -v jq >/dev/null &&
-     jq -e --arg id "$ID" '(.plugins // []) | any(.id == $id)' "$SHELL_JSON" >/dev/null 2>&1; then
-    ok "plugin enabled"
-    ((WANT_KEY)) && { grep -q "toggle $ID" "$BINDINGS" 2>/dev/null && ok "bound to a key in bindings.lua"; }
-    exit 0
-  fi
-
-  for _ in $(seq 1 60); do
-    omarchy-shell shell ping >/dev/null 2>&1 && break
-    sleep 1
-  done
-
-  # Proof of load: another plugin that is only enabled because the file says so
-  # is reported enabled. Until then the shell is still answering from defaults.
-  witness=$(jq -r --arg id "$ID" '(.plugins // [])[] | select(.id != $id) | .id' \
-    "$SHELL_JSON" 2>/dev/null | head -1)
-  if [[ -n "$witness" ]]; then
-    for _ in $(seq 1 60); do
-      [[ "$(omarchy plugin list 2>/dev/null | awk -v w="$witness" '$1 == w { print $2 }')" == "enabled" ]] && break
-      sleep 1
-    done
-  else
-    # Nothing to witness with -- the file is already stripped. Mutating now
-    # would only bake the defaults in further, so leave it for a human.
-    absent "shell.json lists no plugins; it looks reset. Not touching it."
-    exit 1
-  fi
-fi
-
+# So a mutation made before that load completes persists the defaults over the
+# user's configuration: bar layout, widget settings and every other plugin,
+# gone. That is why this script is meant to be run by hand from a settled
+# session, and never from a boot hook.
 # --- is the plugin loaded? --------------------------------------------------
 state=$(omarchy plugin list 2>/dev/null | awk -v id="$ID" '$1 == id { print $2 }')
 case "$state" in
@@ -141,26 +100,6 @@ if ((WANT_KEY)); then
     } >> "$BINDINGS"
     did "bound $KEY in bindings.lua"
     note "run 'hyprctl reload' to pick it up"
-  fi
-fi
-
-# --- the self-repair hook ---------------------------------------------------
-if ((WANT_HOOK)); then
-  if [[ -f "$HOOK" ]] && grep -q "scripts/setup" "$HOOK"; then
-    ok "post-boot hook installed"
-  elif ((CHECK)); then
-    absent "no post-boot hook — a reset shell.json would stay broken"
-  else
-    mkdir -p "$(dirname "$HOOK")"
-    cat > "$HOOK" <<EOF
-#!/usr/bin/env bash
-# Days: re-apply the plugin's setup when something has reset shell.json.
-# Installed by $ID's scripts/setup. Safe to delete; the plugin keeps working
-# until the next time shell.json is rolled back.
-exec "$HERE/scripts/setup" --quiet --wait --no-hook
-EOF
-    did "installed the post-boot hook"
-    note "runs on every login; repairs a reset shell.json on its own"
   fi
 fi
 
