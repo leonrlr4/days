@@ -1,0 +1,4 @@
+*.bak
+*.tmp
+DEVLOG.md
+__pycache__/

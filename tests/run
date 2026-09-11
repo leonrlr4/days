@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Run the head-less suites.
+#
+#   tests/run
+#
+# QT_ASSUME_STDERR_HAS_CONSOLE is what makes console output visible: under
+# -platform offscreen Qt installs a message handler that drops it silently,
+# so without this a failing check prints nothing and only the exit code moves.
+set -uo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+fail=0
+QT_ASSUME_STDERR_HAS_CONSOLE=1 /usr/lib/qt6/bin/qml -platform offscreen tests/test_store.qml 2>&1 || fail=1
+exit $fail
