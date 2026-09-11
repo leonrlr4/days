@@ -51,6 +51,7 @@ Item {
   property var events: []
   property string eventsWanted: ""
   property string pasteError: ""
+  property string copiedSha: ""
 
   // Saving is continuous, so the only question worth answering on screen is
   // whether it has caught up. Unsaved while anything is pending, then "saved"
@@ -294,8 +295,11 @@ Item {
 
   function deleteSelected() {
     if (!root.selId) return
-    var date = root.selDate
-    var id = root.selId
+    root.deleteTask(root.selDate, root.selId)
+  }
+
+  function deleteTask(date, id) {
+    if (!date || !id) return
     var result = Store.deleteTask(root.readDay(date), id)
     if (!result.removed) return
     root.undoEntry = { date: date, task: result.removed, at: result.at }
@@ -328,6 +332,13 @@ Item {
   }
 
   // ---- attachments ---------------------------------------------------------
+  function copyAttachment(att) {
+    if (!att || copyProc.running) return
+    copyProc.command = [root.pluginDir + "/scripts/copy-image",
+                        "--dir", root.dataDir, "--sha", att.sha, "--ext", att.ext]
+    copyProc.running = true
+  }
+
   function pasteImage() {
     if (!root.selId) {
       root.pasteError = "select a task first — an image attaches to one"
@@ -504,6 +515,36 @@ Item {
 
   Process {
     id: openProc
+  }
+
+  // ---- putting an image back on the clipboard --------------------------------
+  // A screenshot kept on a task is usually wanted somewhere else eventually.
+  // One click puts it back on the clipboard; two open it.
+  Process {
+    id: copyProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var result
+        try {
+          result = JSON.parse(text)
+        } catch (e) {
+          return
+        }
+        if (!result.ok) {
+          root.pasteError = result.error || "could not copy the image"
+          return
+        }
+        root.copiedSha = result.sha
+        copiedFlash.restart()
+      }
+    }
+  }
+
+  Timer {
+    id: copiedFlash
+    interval: 1400
+    onTriggered: root.copiedSha = ""
   }
 
   Process {

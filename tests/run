@@ -9,7 +9,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fail=0
-QT_ASSUME_STDERR_HAS_CONSOLE=1 /usr/lib/qt6/bin/qml -platform offscreen tests/test_store.qml 2>&1 || fail=1
+TZ=Asia/Taipei QT_ASSUME_STDERR_HAS_CONSOLE=1 /usr/lib/qt6/bin/qml -platform offscreen tests/test_store.qml 2>&1 || fail=1
 rm -rf "${XDG_RUNTIME_DIR:-/tmp}/days-fileview-test"
 # Piping would hide quickshell's exit code behind grep's, and grep succeeds on
 # the word FAIL -- so the status is captured before anything filters the output.

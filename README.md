@@ -20,7 +20,9 @@ written this morning.
 
 **Screenshots on the task.** `Ctrl+V` in the detail pane stores whatever image
 is on the clipboard, or imports it if what you copied was a path to one.
-Identical images are stored once no matter how many tasks point at them.
+Identical images are stored once no matter how many tasks point at them. Click
+a thumbnail to put it back on the clipboard, double-click to enlarge it, and
+right-click to remove it.
 
 **Notes in Markdown.** The note renders where it sits and becomes an editor
 when you click it. No preview toggle, no second mode.
@@ -104,7 +106,7 @@ surface rather than a window, so that check sees whatever was behind it. Both
 are accepted here.
 
 Clicking works everywhere too: a date in the month grid, a checkbox, a row, the
-note, a thumbnail. Right-click a thumbnail to remove it.
+note. Hovering a task shows a `×` to delete it — `u` still puts it back.
 
 ## Where your data is
 

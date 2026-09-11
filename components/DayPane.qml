@@ -211,6 +211,7 @@ Item {
             onToggled: overlay.toggleDone(modelData.date, modelData.id)
             onOpened: overlay.select(modelData.date, modelData.id)
             onPulled: overlay.moveToToday(modelData.date, modelData.id)
+            onDeleted: overlay.deleteTask(modelData.date, modelData.id)
           }
         }
       }
@@ -235,6 +236,7 @@ Item {
             selected: overlay.selId === modelData.id && overlay.selDate === overlay.date
             onToggled: overlay.toggleDone(overlay.date, modelData.id)
             onOpened: overlay.select(overlay.date, modelData.id)
+            onDeleted: overlay.deleteTask(overlay.date, modelData.id)
           }
         }
 

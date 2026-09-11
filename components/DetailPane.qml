@@ -296,14 +296,28 @@ Item {
                   sourceSize.width: Style.space(264)
                 }
 
+                // One click copies, two enlarge. Qt delivers the first click
+                // of a double click as a plain click, so the copy waits out the
+                // double-click interval rather than firing underneath it.
                 MouseArea {
                   id: shotHover
                   anchors.fill: parent
                   hoverEnabled: true
                   acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+                  Timer {
+                    id: copyAfterSingle
+                    interval: 220
+                    onTriggered: overlay.copyAttachment(modelData)
+                  }
+
                   onClicked: function(mouse) {
                     if (mouse.button === Qt.RightButton) overlay.removeAttachment(modelData.sha)
-                    else overlay.lightboxAt = index
+                    else copyAfterSingle.restart()
+                  }
+                  onDoubleClicked: function(mouse) {
+                    copyAfterSingle.stop()
+                    overlay.lightboxAt = index
                   }
                 }
 

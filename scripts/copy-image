@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Put one stored image on the clipboard.
+#
+#   copy-image --dir <data dir> --sha <hash> --ext <png|jpg|webp|gif|avif>
+#
+# The hash and extension come from a day file, which is the plugin's own data
+# rather than anything a stranger wrote -- but they are still assembled into a
+# path, so they are checked against their grammar before they get near one.
+set -uo pipefail
+
+# A fixed PATH, not whatever the caller happened to export.
+export PATH="/usr/local/bin:/usr/bin:/bin"
+
+die() { jq -cn --arg e "$1" '{ok: false, error: $e}'; exit 0; }
+
+DIR=""
+SHA=""
+EXT=""
+
+# shift 2 does nothing when only the flag is left, so the loop would spin.
+need_value() { (($# >= 2)) || die "$1 needs a value"; }
+
+while (($#)); do
+  case "$1" in
+    --dir) need_value "$@"; DIR="$2"; shift 2 ;;
+    --sha) need_value "$@"; SHA="$2"; shift 2 ;;
+    --ext) need_value "$@"; EXT="$2"; shift 2 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$DIR" ]] || die "no --dir given"
+[[ "$SHA" =~ ^[0-9a-f]{6,64}$ ]] || die "not a content hash: $SHA"
+
+case "$EXT" in
+  png)  mime=image/png ;;
+  jpg)  mime=image/jpeg ;;
+  webp) mime=image/webp ;;
+  gif)  mime=image/gif ;;
+  avif) mime=image/avif ;;
+  *) die "unsupported image type: $EXT" ;;
+esac
+
+blob="$DIR/blobs/$SHA.$EXT"
+[[ -f "$blob" && ! -L "$blob" ]] || die "no stored image for that hash"
+
+command -v wl-copy >/dev/null || die "wl-clipboard is not installed"
+
+# wl-copy forks and holds the selection until something else claims it; that
+# background process is the clipboard, so it is not waited on.
+wl-copy --type "$mime" < "$blob" || die "could not reach the clipboard"
+
+jq -cn --arg sha "$SHA" --arg mime "$mime" '{ok: true, sha: $sha, mime: $mime}'

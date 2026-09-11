@@ -442,7 +442,8 @@ Item {
           function() {
             return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-11T11:30:00+08:00","title":"Standup","calendar_color":"#9a9cff"}]}')
           },
-          [{ at: "11:30", title: "Standup", color: "#9a9cff", url: "", location: "" }])
+          [{ at: "11:30", start: "2026-09-11T11:30:00+08:00", title: "Standup",
+             color: "#9a9cff", url: "", location: "" }])
 
     check("an all-day event has no time to show",
           function() {
@@ -484,10 +485,12 @@ Item {
     check("a cache document round-trips",
           function() {
             var doc = Store.eventCacheDoc(
-              [{ at: "09:30", title: "Standup", color: "#6699ff", url: "", location: "" }], "2026-09-11T21:20:00Z")
+              [{ at: "09:30", start: "", title: "Standup", color: "#6699ff",
+                 url: "", location: "" }], "2026-09-11T21:20:00Z")
             return Store.parseEventCache(JSON.stringify(doc)).events
           },
-          [{ at: "09:30", title: "Standup", color: "#6699ff", url: "", location: "" }])
+          [{ at: "09:30", start: "", title: "Standup", color: "#6699ff",
+             url: "", location: "" }])
 
     check("the cache records when it was fetched",
           function() {
@@ -615,6 +618,72 @@ Item {
     check("a non-ASCII path is encoded",
           function() { return Store.fileUrl("/home/使用者/days") },
           "file:///home/" + encodeURIComponent("使用者") + "/days")
+
+    // ---- event times are instants, not digits -------------------------------
+    // The offset in an ICS start is the organiser's timezone. Taking the clock
+    // digits out of the string shows their wall clock, not yours: a 06:30
+    // meeting in Sydney read as 06:30 in Taipei, two hours late, every time.
+    // The suite runs under TZ=Asia/Taipei so these are fixed values.
+
+    check("an event in another timezone is converted to yours",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T06:30:00+10:00","title":"Sydney standup"}]}')[0].at
+          },
+          "04:30")
+
+    check("an event already in your timezone is unchanged",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T09:00:00+08:00","title":"Here"}]}')[0].at
+          },
+          "09:00")
+
+    check("a UTC instant is converted too",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-12T01:00:00Z","title":"Zulu"}]}')[0].at
+          },
+          "09:00")
+
+    // Crossing midnight is where taking the digits is most obviously wrong.
+    check("an instant that lands on another date still shows your clock",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"2026-09-11T23:30:00-05:00","title":"Late"}]}')[0].at
+          },
+          "12:30")
+
+    check("an all-day event still has no time",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":true,"start":"2026-09-12","title":"Holiday"}]}')[0].at
+          },
+          "")
+
+    check("an unparseable start does not throw or invent a time",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[{"all_day":false,"start":"soon","title":"Vague"}]}')[0].at
+          },
+          "")
+
+    // Sorting has to follow the instant as well, or a converted time lands out
+    // of order against one that did not move.
+    check("events order by their converted time",
+          function() {
+            return Store.parseEvents('{"ok":true,"events":[' +
+              '{"all_day":false,"start":"2026-09-12T09:00:00+08:00","title":"nine"},' +
+              '{"all_day":false,"start":"2026-09-12T06:30:00+10:00","title":"four thirty"}]}')
+              .map(function(e) { return e.title })
+          },
+          ["four thirty", "nine"])
+
+    // A cache written before this fix holds the organiser's digits. Keeping the
+    // instant beside them lets a stale entry correct itself on read instead of
+    // showing the wrong time until the background refresh lands.
+    check("a cached event re-derives its time from the instant",
+          function() {
+            var stale = { v: 1, fetchedAt: "x", events: [
+              { at: "06:30", title: "Sydney standup", color: "",
+                url: "", location: "", start: "2026-09-12T06:30:00+10:00" } ] }
+            return Store.parseEventCache(JSON.stringify(stale)).events[0].at
+          },
+          "04:30")
 
     exitTimer.start()
   }

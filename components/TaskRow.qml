@@ -23,6 +23,7 @@ Item {
   signal toggled()
   signal opened()
   signal pulled()
+  signal deleted()
 
   readonly property bool carried: sourceDate !== ""
 
@@ -167,6 +168,25 @@ Item {
         color: overlay.dimmer
         font.family: overlay.fontFamily
         font.pixelSize: Style.font.caption
+      }
+
+      // Only on hover, and only on the row you are pointing at: a delete that
+      // is always visible on every row is a delete you eventually hit by
+      // accident. `dd` still works, and `u` still puts it back.
+      Text {
+        visible: hover.containsMouse || pullHover.containsMouse
+        text: "\u00d7"
+        color: deleteHover.containsMouse ? overlay.urgent : overlay.dimmer
+        font.family: overlay.fontFamily
+        font.pixelSize: Style.font.body
+
+        MouseArea {
+          id: deleteHover
+          anchors.fill: parent
+          anchors.margins: -Style.spacing.md
+          hoverEnabled: true
+          onClicked: row.deleted()
+        }
       }
 
       Text {
