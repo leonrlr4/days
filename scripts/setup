@@ -5,12 +5,10 @@
 #                 [--key "SUPER + M"] [--no-key] [--no-hook]
 #
 # Being enabled is not a property of the plugin directory. It is one line in
-# ~/.config/omarchy/shell.json, a file the shell rewrites on every settings
-# change and which has, on this machine, been restored wholesale from an older
-# backup -- taking with it every plugin installed since. When that happens the
-# plugin is still on disk, the keybinding is still in bindings.lua, Hyprland
-# still has it bound, and pressing the key does nothing at all, because what it
-# toggles is no longer loaded.
+# ~/.config/omarchy/shell.json. When that file is reset -- see the startup
+# window described further down -- the plugin is still on disk, the keybinding
+# is still in bindings.lua, Hyprland still has it bound, and pressing the key
+# does nothing at all, because what it toggles is no longer loaded.
 #
 # So this is idempotent and re-runnable: it reports what is already right,
 # changes only what is not, and --check changes nothing and exits non-zero when
@@ -54,14 +52,55 @@ note()   { ((QUIET)) || printf '    %s\n' "$1"; }
 
 command -v omarchy >/dev/null || { echo "setup: omarchy is required" >&2; exit 1; }
 
-# The post-boot hook fires two seconds after Hyprland loads its startup config,
-# which is usually before the shell is answering IPC. Everything below talks to
-# the shell, so wait for it rather than failing until the next login.
+# --- the startup window, and why this does not just call enable ------------
+#
+# shell.qml keeps the live config in `shellConfig`, initialised to the factory
+# defaults and replaced when ~/.config/omarchy/shell.json finishes loading --
+# asynchronously, with no blockLoading. Every settings change goes through
+# mutateShellConfig(), which copies whatever `shellConfig` holds *right now*,
+# applies the change and writes the whole thing back.
+#
+# So any mutation made before that load completes copies the defaults and
+# persists them over the user's file. The bar, every widget and every other
+# plugin are gone, and the only trace is a shell.json the size of the shipped
+# default. Calling `omarchy plugin enable` from a post-boot hook lands squarely
+# in that window, which turns an occasional race into one that fires on every
+# single boot.
+#
+# Hence: read the file first and do nothing at all when we are already in it --
+# the normal case, and no IPC means no risk. Only when genuinely absent is a
+# mutation needed, and then wait for proof that the shell is working from the
+# file rather than from its defaults.
 if ((WAIT)); then
+  SHELL_JSON="$CONFIG/shell.json"
+
+  if command -v jq >/dev/null &&
+     jq -e --arg id "$ID" '(.plugins // []) | any(.id == $id)' "$SHELL_JSON" >/dev/null 2>&1; then
+    ok "plugin enabled"
+    ((WANT_KEY)) && { grep -q "toggle $ID" "$BINDINGS" 2>/dev/null && ok "bound to a key in bindings.lua"; }
+    exit 0
+  fi
+
   for _ in $(seq 1 60); do
     omarchy-shell shell ping >/dev/null 2>&1 && break
     sleep 1
   done
+
+  # Proof of load: another plugin that is only enabled because the file says so
+  # is reported enabled. Until then the shell is still answering from defaults.
+  witness=$(jq -r --arg id "$ID" '(.plugins // [])[] | select(.id != $id) | .id' \
+    "$SHELL_JSON" 2>/dev/null | head -1)
+  if [[ -n "$witness" ]]; then
+    for _ in $(seq 1 60); do
+      [[ "$(omarchy plugin list 2>/dev/null | awk -v w="$witness" '$1 == w { print $2 }')" == "enabled" ]] && break
+      sleep 1
+    done
+  else
+    # Nothing to witness with -- the file is already stripped. Mutating now
+    # would only bake the defaults in further, so leave it for a human.
+    absent "shell.json lists no plugins; it looks reset. Not touching it."
+    exit 1
+  fi
 fi
 
 # --- is the plugin loaded? --------------------------------------------------

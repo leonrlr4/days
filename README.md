@@ -50,12 +50,20 @@ and installs a post-boot hook. It is idempotent — run it any time, and
 `scripts/setup --check` reports what is missing without changing anything.
 
 The hook matters more than it sounds. Whether a plugin is enabled lives in
-`~/.config/omarchy/shell.json`, which the shell rewrites constantly and which
-can be restored from an older backup — taking every plugin installed since with
-it. When that happens the plugin is still on disk, the key is still bound,
-Hyprland still has it, and pressing it does nothing, because what it toggles is
-no longer loaded. The hook re-applies the setup on every login, so that repairs
-itself before you notice. `--no-hook` skips it.
+`~/.config/omarchy/shell.json`. When that file is reset the plugin is still on
+disk, the key is still bound, Hyprland still has it, and pressing it does
+nothing, because what it toggles is no longer loaded — a failure with nothing
+on screen to explain it. The hook repairs that on the next login. `--no-hook`
+skips it.
+
+It reads `shell.json` before it does anything, and exits without touching the
+shell when the plugin is already listed there — which is almost always. That
+is deliberate. The shell holds its live config in a property initialised to the
+factory defaults and replaced when `shell.json` finishes loading, and every
+settings change copies whatever that property holds *right now* and writes the
+whole thing back. A change made before the load completes therefore persists
+the defaults over the user's config. A hook that reached for `omarchy plugin
+enable` on every boot would land in that window every time.
 
 Pick a different key with `--key "SUPER + D"`, or skip the binding with
 `--no-key`. `SUPER + M` is free in a stock Omarchy install; `SUPER + T` toggles

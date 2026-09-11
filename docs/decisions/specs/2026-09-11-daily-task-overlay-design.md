@@ -125,16 +125,51 @@ A plugin that declares `bar-widget` is only *enabled* while it occupies a slot
 on the bar: `omarchy plugin enable` always places it, there is no IPC to take it
 off again, and the enabled state, the slot, its per-widget settings and the
 neighbouring clock's settings are four separate entries in `shell.json`. On
-2026-09-11 that file was restored from an older backup and all four went with
-it. The plugin was still on disk, `SUPER + M` was still bound and Hyprland
-still had it, and the key did nothing — because what it toggled was no longer
-loaded, with nothing on screen to say so.
+2026-09-11 that file was reset and all four went with it. The plugin was still
+on disk, `SUPER + M` was still bound and Hyprland still had it, and the key did
+nothing — because what it toggled was no longer loaded, with nothing on screen
+to say so.
 
 Overlay-only, the footprint is one line in `shell.json`'s `plugins` array, and
-`scripts/setup` restores it. That script also installs a `post-boot.d` hook, so
-the next login repairs a rolled-back `shell.json` without being asked. The
-count on the bar was not worth four fragile settings for a failure that reads
-as "the key is broken".
+`scripts/setup` restores it. The count on the bar was not worth four fragile
+settings for a failure that reads as "the key is broken".
+
+### Why the hook reads the file instead of calling enable
+
+`scripts/setup` installs a `post-boot.d` hook, and that hook does nothing at all
+in the normal case — it reads `shell.json` and exits when the plugin is already
+listed, without touching the shell.
+
+The first version called `omarchy plugin enable` unconditionally, and reset the
+user's whole configuration on the very next boot. `shell.qml` holds the live
+config in `shellConfig`, initialised to `builtinShellConfig` — the shipped
+defaults — and replaced only when `~/.config/omarchy/shell.json` finishes
+loading, asynchronously, through a `FileView` with no `blockLoading`. Every
+settings change runs through `mutateShellConfig()`, which deep-copies whatever
+`shellConfig` holds at that instant, applies the change, and persists the
+result:
+
+```qml
+property var shellConfig: builtinShellConfig          // defaults, until loaded
+
+function mutateShellConfig(mutator) {
+  var copy = JSON.parse(JSON.stringify(shellConfig || builtinShellConfig))
+  mutator(copy)
+  persistShellConfig(copy)                            // writes the whole file
+}
+```
+
+A mutation inside that startup window therefore copies the defaults and writes
+them over the user's configuration — bar layout, every widget setting and every
+other plugin gone, with a `shell.json` the size of the shipped default as the
+only evidence. Hyprland's autostart runs `omarchy-hook post-boot` two seconds
+after loading its config, which is squarely inside the window, so a hook that
+enables on every boot destroys the configuration on every boot.
+
+Reading the file first removes the risk entirely: the mutation only happens when
+the plugin is genuinely missing, and then only after another plugin listed in
+the same file reports enabled — proof the shell is working from the file rather
+than from its defaults.
 
 ## Interface
 
