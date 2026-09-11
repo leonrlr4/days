@@ -116,11 +116,31 @@ a CLI for free, but it forks bash and jq to tick a checkbox. Also rejected: a
 Rust helper daemon — faster in principle, but it adds a build step to install,
 a resident process, and a second thing that can break, for a dataset this size.
 
+## Amendment, 2026-09-12: no bar widget
+
+The first version shipped a bar widget as well — a clock with the day's open
+count beside it, meant to stand in for the Omarchy clock. It is removed.
+
+A plugin that declares `bar-widget` is only *enabled* while it occupies a slot
+on the bar: `omarchy plugin enable` always places it, there is no IPC to take it
+off again, and the enabled state, the slot, its per-widget settings and the
+neighbouring clock's settings are four separate entries in `shell.json`. On
+2026-09-11 that file was restored from an older backup and all four went with
+it. The plugin was still on disk, `SUPER + M` was still bound and Hyprland
+still had it, and the key did nothing — because what it toggled was no longer
+loaded, with nothing on screen to say so.
+
+Overlay-only, the footprint is one line in `shell.json`'s `plugins` array, and
+`scripts/setup` restores it. That script also installs a `post-boot.d` hook, so
+the next login repairs a rolled-back `shell.json` without being asked. The
+count on the bar was not worth four fragile settings for a failure that reads
+as "the key is broken".
+
 ## Interface
 
-A centred overlay on `SUPER + ALT + T`, three panes: month grid with per-day
+A centred overlay on `SUPER + M`, three panes: month grid with per-day
 open-task dots; the day's schedule (read-only), carried-over section and task
-list; and the selected task's detail. A bar widget shows today's open count.
+list; and the selected task's detail.
 
 Two consequences worth recording, because they are easy to undo by accident:
 

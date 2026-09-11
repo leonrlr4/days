@@ -7,39 +7,10 @@
   "license": "MIT",
   "description": "A task list that belongs to a day. Markdown notes, pasted screenshots and subtasks on every task, your calendar's events beside them, and nothing that leaves this machine.",
   "kinds": [
-    "overlay",
-    "bar-widget"
+    "overlay"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "overlay": "Overlay.qml",
-    "barWidget": "BarWidget.qml"
-  },
-  "barWidget": {
-    "displayName": "Days",
-    "description": "The date, the time, and how much of the day is still open.",
-    "category": "Time",
-    "allowMultiple": false,
-    "defaultSection": "center",
-    "defaults": {
-      "format": "ddd d MMM HH:mm",
-      "verticalFormat": "HH\nmm"
-    },
-    "schema": [
-      {
-        "key": "format",
-        "type": "string",
-        "label": "Clock format",
-        "description": "Qt date format, e.g. 'ddd d MMM HH:mm' or 'dddd HH:mm'.",
-        "defaultValue": "ddd d MMM HH:mm"
-      },
-      {
-        "key": "verticalFormat",
-        "type": "string",
-        "label": "Clock format on a vertical bar",
-        "description": "Use \\n for line breaks.",
-        "defaultValue": "HH\nmm"
-      }
-    ]
+    "overlay": "Overlay.qml"
   }
 }

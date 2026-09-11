@@ -33,32 +33,33 @@ anything. That bridge takes a couple of seconds to answer, so each day's events
 are cached on disk: the schedule is there the moment the overlay opens, and a
 fresh answer replaces it when it arrives.
 
-**On the bar, instead of a clock.** The widget is a clock first — the same
-`ddd d MMM HH:mm` a bar clock shows, on a minute-precision timer rather than a
-one-second one — with the day's load beside it. The count is everything still
-open that was due today or earlier, it turns urgent when any of it is overdue,
-and it disappears entirely when the day is clear, so a quiet day reads as a
-plain clock. Clicking opens the overlay.
-
-If you run a bar that colourises each widget to a single hue, set that widget's
-`iconColor` to `none` or the count will be tinted to match the clock.
+**One key, nothing on the bar.** Days is an overlay and only an overlay. That
+is not just taste: a plugin that declares a bar widget is only "enabled" while
+it holds a slot on the bar, so four separate settings have to survive for the
+key to work. With no bar widget there is one, and `scripts/setup` puts it back.
 
 ## Install
 
 ```
 omarchy plugin add leonrlr4/days
+~/.config/omarchy/plugins/leonrlr4.days/scripts/setup
 ```
 
-Then bind a key. Days does not take one on its own:
+`scripts/setup` enables the plugin, binds `SUPER + M` in your `bindings.lua`,
+and installs a post-boot hook. It is idempotent — run it any time, and
+`scripts/setup --check` reports what is missing without changing anything.
 
-```lua
--- ~/.config/hypr/bindings.lua
-o.bind("SUPER + M", "Daily tasks", "omarchy-shell shell toggle leonrlr4.days {}")
-```
+The hook matters more than it sounds. Whether a plugin is enabled lives in
+`~/.config/omarchy/shell.json`, which the shell rewrites constantly and which
+can be restored from an older backup — taking every plugin installed since with
+it. When that happens the plugin is still on disk, the key is still bound,
+Hyprland still has it, and pressing it does nothing, because what it toggles is
+no longer loaded. The hook re-applies the setup on every login, so that repairs
+itself before you notice. `--no-hook` skips it.
 
-`SUPER + M` is free in a stock Omarchy install. Two nearby keys are not, if you
-were about to reach for them: `SUPER + T` toggles floating, and the whole comma
-family belongs to notifications.
+Pick a different key with `--key "SUPER + D"`, or skip the binding with
+`--no-key`. `SUPER + M` is free in a stock Omarchy install; `SUPER + T` toggles
+floating and the whole comma family belongs to notifications.
 
 Requires `wl-clipboard`, `imagemagick` and `jq`, all of which a stock Omarchy
 install already has.

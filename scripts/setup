@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Put Days where it belongs on the desktop, and say what it changed.
+#
+#   scripts/setup [--check] [--quiet] [--wait]
+#                 [--key "SUPER + M"] [--no-key] [--no-hook]
+#
+# Being enabled is not a property of the plugin directory. It is one line in
+# ~/.config/omarchy/shell.json, a file the shell rewrites on every settings
+# change and which has, on this machine, been restored wholesale from an older
+# backup -- taking with it every plugin installed since. When that happens the
+# plugin is still on disk, the keybinding is still in bindings.lua, Hyprland
+# still has it bound, and pressing the key does nothing at all, because what it
+# toggles is no longer loaded.
+#
+# So this is idempotent and re-runnable: it reports what is already right,
+# changes only what is not, and --check changes nothing and exits non-zero when
+# something is missing. It also installs a post-boot hook that runs it on every
+# login, so a reset repairs itself before you notice.
+set -uo pipefail
+
+ID="leonrlr4.days"
+HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
+BINDINGS="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua"
+HOOK="$CONFIG/hooks/post-boot.d/$ID"
+
+CHECK=0
+QUIET=0
+WAIT=0
+KEY="SUPER + M"
+WANT_KEY=1
+WANT_HOOK=1
+
+while (($#)); do
+  case "$1" in
+    --check) CHECK=1; shift ;;
+    --quiet) QUIET=1; shift ;;
+    --wait) WAIT=1; shift ;;
+    --key) KEY="${2:-}"; shift 2 ;;
+    --no-key) WANT_KEY=0; shift ;;
+    --no-hook) WANT_HOOK=0; shift ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "setup: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+missing=0
+changed=0
+
+ok()     { ((QUIET)) || printf '  \033[32m✓\033[0m %s\n' "$1"; }
+did()    { printf '  \033[33m→\033[0m %s\n' "$1"; changed=$((changed + 1)); }
+absent() { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; missing=$((missing + 1)); }
+note()   { ((QUIET)) || printf '    %s\n' "$1"; }
+
+command -v omarchy >/dev/null || { echo "setup: omarchy is required" >&2; exit 1; }
+
+# The post-boot hook fires two seconds after Hyprland loads its startup config,
+# which is usually before the shell is answering IPC. Everything below talks to
+# the shell, so wait for it rather than failing until the next login.
+if ((WAIT)); then
+  for _ in $(seq 1 60); do
+    omarchy-shell shell ping >/dev/null 2>&1 && break
+    sleep 1
+  done
+fi
+
+# --- is the plugin loaded? --------------------------------------------------
+state=$(omarchy plugin list 2>/dev/null | awk -v id="$ID" '$1 == id { print $2 }')
+case "$state" in
+  enabled)
+    ok "plugin enabled"
+    ;;
+  disabled)
+    if ((CHECK)); then
+      absent "plugin is disabled — the key is bound but toggles nothing"
+    elif omarchy plugin enable "$ID" >/dev/null 2>&1; then
+      did "enabled the plugin"
+    else
+      absent "could not enable the plugin"
+    fi
+    ;;
+  *)
+    absent "plugin is not installed — clone it into $CONFIG/plugins/$ID"
+    exit 1
+    ;;
+esac
+
+# --- the keybinding ---------------------------------------------------------
+# Kept in the user's own bindings.lua rather than written by the plugin on every
+# run: it survives everything that resets shell.json, and it is theirs to move.
+if ((WANT_KEY)); then
+  if [[ ! -f "$BINDINGS" ]]; then
+    absent "no $BINDINGS to bind a key in"
+  elif grep -q "toggle $ID" "$BINDINGS"; then
+    ok "bound to a key in bindings.lua"
+  elif ((CHECK)); then
+    absent "no keybinding in bindings.lua"
+  else
+    {
+      printf '\n-- Days: a task list that belongs to a day.\n'
+      printf '%s\n' "o.bind(\"$KEY\", \"Daily tasks\", \"omarchy-shell shell toggle $ID {}\")"
+    } >> "$BINDINGS"
+    did "bound $KEY in bindings.lua"
+    note "run 'hyprctl reload' to pick it up"
+  fi
+fi
+
+# --- the self-repair hook ---------------------------------------------------
+if ((WANT_HOOK)); then
+  if [[ -f "$HOOK" ]] && grep -q "scripts/setup" "$HOOK"; then
+    ok "post-boot hook installed"
+  elif ((CHECK)); then
+    absent "no post-boot hook — a reset shell.json would stay broken"
+  else
+    mkdir -p "$(dirname "$HOOK")"
+    cat > "$HOOK" <<EOF
+#!/usr/bin/env bash
+# Days: re-apply the plugin's setup when something has reset shell.json.
+# Installed by $ID's scripts/setup. Safe to delete; the plugin keeps working
+# until the next time shell.json is rolled back.
+exec "$HERE/scripts/setup" --quiet --wait --no-hook
+EOF
+    did "installed the post-boot hook"
+    note "runs on every login; repairs a reset shell.json on its own"
+  fi
+fi
+
+if ((missing)); then
+  ((QUIET)) || echo
+  if ((CHECK)); then
+    echo "$missing thing(s) missing. Run scripts/setup to apply them." >&2
+  else
+    echo "$missing thing(s) could not be applied." >&2
+  fi
+  exit 1
+fi
+
+((QUIET)) && exit 0
+echo
+if ((changed)); then
+  echo "Applied $changed change(s)."
+else
+  echo "Nothing to do."
+fi
