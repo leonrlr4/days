@@ -8,6 +8,29 @@ Item {
 
   readonly property var task: overlay.selTask
 
+  // close() flushes to disk, so anything still sitting in a debounce has to be
+  // committed before that happens rather than after it.
+  Connections {
+    target: pane.overlay
+    function onCommitEdits() {
+      titleCommit.triggered()
+      noteCommit.triggered()
+    }
+  }
+
+  // The editors are filled when the selection changes and never bound to the
+  // task afterwards. Committing as you type replaces the task object, which
+  // would re-run a text binding and could put a stale value back over a
+  // character typed in between -- losing it, and moving the cursor.
+  readonly property string selKey: overlay.selDate + "/" + overlay.selId
+  onSelKeyChanged: pane.syncEditors()
+  Component.onCompleted: pane.syncEditors()
+
+  function syncEditors() {
+    titleEdit.text = pane.task ? pane.task.text : ""
+    editor.text = pane.task ? pane.task.note : ""
+  }
+
   Text {
     id: paneLabel
     anchors.top: parent.top
@@ -71,7 +94,6 @@ Item {
         TextEdit {
           id: titleEdit
           width: parent.width
-          text: pane.task ? pane.task.text : ""
           color: overlay.fg
           font.family: overlay.fontFamily
           font.pixelSize: Style.font.heading
@@ -216,7 +238,6 @@ Item {
             visible: overlay.editingNote
             anchors.fill: parent
             anchors.margins: Style.spacing.xl
-            text: pane.task ? pane.task.note : ""
             color: overlay.fg
             font.family: overlay.fontFamily
             font.pixelSize: Style.font.bodySmall

@@ -105,7 +105,12 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
+  // Anything still in an editor's debounce is committed first: flushing before
+  // asking for it would write the day as it was a moment ago.
+  signal commitEdits()
+
   function close() {
+    root.commitEdits()
     root.flush()
     root.editingNote = false
     root.lightboxAt = -1

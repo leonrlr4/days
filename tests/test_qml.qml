@@ -110,6 +110,18 @@ Item {
     // mkdir the store before the first task is added. Checked on a later tick
     // because writes are queued, not synchronous -- the overlay never reads
     // back what it just wrote, it keeps the day it wrote in memory.
+    // ---- one FileView, two files, one tick -------------------------------
+    // flush() writes every dirty day through a single FileView by reassigning
+    // its path in a loop. Writes are queued rather than synchronous, so this
+    // asks whether the queued write remembers the path it was issued with, or
+    // whether the last assignment wins and the earlier day's content lands in
+    // the wrong file -- or nowhere. Moving a carried-over task dirties two days
+    // at once, so this is the ordinary path, not a corner.
+    writer.path = root.dir + "/race-a.json"
+    writer.setText("content-a")
+    writer.path = root.dir + "/race-b.json"
+    writer.setText("content-b")
+
     root.write("nested/deep/d.json", "fourth")
 
     // ---- Repeater delegates and modelData ------------------------------
@@ -149,6 +161,10 @@ Item {
     onTriggered: {
       check("writing creates the directories above it",
             root.read("nested/deep/d.json"), "fourth")
+      check("the first of two writes through one view keeps its own path",
+            root.read("race-a.json"), "content-a")
+      check("and the second one lands too",
+            root.read("race-b.json"), "content-b")
       exitTimer.start()
     }
   }
