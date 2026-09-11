@@ -85,6 +85,38 @@ check "a missing file is refused" "false" "$(jq -r .ok <<<"$out")"
 check "a refusal is still valid JSON" "0" \
   "$(jq -e . >/dev/null 2>&1 <<<"$out"; echo $?)"
 
+# --- limits ----------------------------------------------------------------
+# The clipboard is not a trusted size. A gigapixel PNG is a few hundred bytes on
+# disk and will happily take the machine down inside ImageMagick, so both the
+# byte count and the decoded dimensions are bounded before anything decodes.
+D="$WORK/limits"; mkdir -p "$D"
+magick -size 900x700 gradient:blue-black "$WORK/big.png"
+
+out=$(DAYS_MAX_BYTES=1000 "$SCRIPT" --dir "$D" --file "$WORK/big.png" 2>/dev/null)
+check "a file over the byte ceiling is refused" "false" "$(jq -r .ok <<<"$out")"
+check "the refusal says it was too large" "1" \
+  "$(jq -r '.error // ""' <<<"$out" | grep -ci 'large\|big\|bytes')"
+check "and nothing is stored" "0" "$(ls "$D/blobs" 2>/dev/null | wc -l)"
+
+out=$(DAYS_MAX_PIXELS=1000 "$SCRIPT" --dir "$D" --file "$WORK/big.png" 2>/dev/null)
+check "an image over the pixel ceiling is refused" "false" "$(jq -r .ok <<<"$out")"
+check "and still nothing is stored" "0" "$(ls "$D/blobs" 2>/dev/null | wc -l)"
+
+out=$("$SCRIPT" --dir "$D" --file "$WORK/big.png" 2>/dev/null)
+check "the same image passes under the real ceilings" "true" "$(jq -r .ok <<<"$out")"
+
+# --- symlinked destinations -------------------------------------------------
+# The hash is predictable from the image, so the paths it writes to are too.
+# Anything already sitting at one of them must not be written through.
+D="$WORK/links"; rm -rf "$D"; mkdir -p "$D/blobs" "$D/thumbs"
+BSHA=$(sha256sum "$WORK/wide.png" | cut -d' ' -f1)
+printf 'do not touch\n' > "$WORK/canary.txt"
+ln -s "$WORK/canary.txt" "$D/blobs/$BSHA.png"
+ln -s "$WORK/canary.txt" "$D/blobs/$BSHA.png.part"
+ln -s "$WORK/canary.txt" "$D/thumbs/$BSHA.webp"
+"$SCRIPT" --dir "$D" --file "$WORK/wide.png" >/dev/null 2>&1
+check "a symlinked destination is not written through" "do not touch" "$(cat "$WORK/canary.txt")"
+
 if (( failed )); then
   printf 'FAIL %d/%d paste-image\n' "$failed" "$checks" >&2
   exit 1

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Qt.labs.folderlistmodel
 import qs.Commons
 import qs.Ui
 import "lib/Store.js" as Store
@@ -64,6 +65,7 @@ Item {
   // tests/test_qml.qml pins the behaviour.
   property int revision: 0
 
+  property bool rebuilding: false
   property var dayCache: ({})
   property var eventCache: ({})
   property var dirtyDates: ({})
@@ -221,7 +223,8 @@ Item {
     }
     // Missing or from an older schema. Rebuilding is the one path that reads
     // every day file, and it runs only here.
-    listDays.running = true
+    root.rebuilding = true
+    dayFiles.folder = "file://" + root.dataDir + "/days"
   }
 
   function rebuildFrom(names) {
@@ -374,7 +377,7 @@ Item {
   function openExternal(url) {
     var safe = Store.safeUrl(url)
     if (!safe) return
-    openProc.command = ["xdg-open", safe]
+    openProc.command = [root.pluginDir + "/scripts/open-url", safe]
     openProc.running = true
     // You asked to be somewhere else. Staying open over the browser would be
     // the wrong answer.
@@ -446,12 +449,22 @@ Item {
     printErrors: false
   }
 
-  Process {
-    id: listDays
-    command: ["ls", "-1", root.dataDir + "/days"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.rebuildFrom(text.split("\n"))
+  // Listing a directory was the one place this shelled out for something QML
+  // can do itself. It also ran `ls` off the ambient PATH, which is a needless
+  // thing to trust for a list of filenames.
+  FolderListModel {
+    id: dayFiles
+    nameFilters: ["*.json"]
+    showDirs: false
+    showDotAndDotDot: false
+    sortField: FolderListModel.Name
+
+    onStatusChanged: {
+      if (!root.rebuilding || status !== FolderListModel.Ready) return
+      root.rebuilding = false
+      var names = []
+      for (var i = 0; i < count; i++) names.push(get(i, "fileName"))
+      root.rebuildFrom(names)
     }
   }
 

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Hand one web link to the desktop, and nothing else.
+#
+#   open-url <https://…>
+#
+# The link comes from a calendar entry, which is text written by whoever sent
+# the invite. Store.safeUrl() has already refused anything that is not http or
+# https; this refuses again at the boundary, because the check that matters is
+# the one next to the exec.
+set -uo pipefail
+
+# A fixed PATH, not whatever the caller happened to export, so nothing earlier
+# on someone's PATH can stand in for xdg-open.
+export PATH="/usr/local/bin:/usr/bin:/bin"
+
+url=${1:-}
+if [[ ! "$url" =~ ^https?://[^[:space:]]+$ ]]; then
+  echo "open-url: refusing to open: $url" >&2
+  exit 2
+fi
+
+exec xdg-open "$url"

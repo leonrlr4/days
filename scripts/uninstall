@@ -11,6 +11,12 @@
 # data directory is only removed when you ask for it by name.
 set -uo pipefail
 
+# A fixed PATH, not whatever the caller happened to export. Every tool below is
+# resolved from it, so a writable directory earlier in someone's PATH cannot
+# stand in for magick, jq or cp. Omarchy's own commands live outside it and are
+# added explicitly.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
+
 ID="leonrlr4.days"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
 BINDINGS="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/bindings.lua"

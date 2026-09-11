@@ -18,5 +18,6 @@ grep -E 'FAIL|ok ' <<<"$out" | sed 's/\x1b\[[0-9;]*m//g'
 
 bash tests/test_paste.sh || fail=1
 bash tests/test_gc.sh || fail=1
+bash tests/test_setup.sh || fail=1
 
 exit $fail

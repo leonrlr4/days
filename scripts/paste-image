@@ -14,7 +14,25 @@
 # the caller parses it and has no other channel to learn what happened.
 set -uo pipefail
 
+# A fixed PATH, not whatever the caller happened to export. Every tool below is
+# resolved from it, so a writable directory earlier in someone's PATH cannot
+# stand in for magick, jq or cp. Omarchy's own commands live outside it and are
+# added explicitly.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
+
 die() { jq -cn --arg e "$1" '{ok: false, error: $e}'; exit 0; }
+
+# The clipboard is not a trusted size. A gigapixel image is a few hundred bytes
+# on disk -- that is what a decompression bomb is -- so the byte count and the
+# decoded dimensions are both bounded before anything decodes. Overridable so
+# the tests can use values small enough to trip deliberately.
+MAX_BYTES=${DAYS_MAX_BYTES:-67108864}      # 64 MiB on disk
+MAX_PIXELS=${DAYS_MAX_PIXELS:-50000000}    # 50 megapixels decoded
+
+# Ceilings for ImageMagick itself, so a format that lies about its dimensions
+# still cannot run the machine out of memory or time. These go after the
+# subcommand: `magick -limit ... identify` reads "identify" as a filename.
+LIMITS=(-limit memory 256MiB -limit map 512MiB -limit disk 1GiB -limit time 30)
 
 DIR=""
 FILE=""
@@ -58,10 +76,18 @@ fi
 
 [[ -s "$SRC" ]] || die "the clipboard holds no image"
 
+bytes=$(stat -c%s "$SRC")
+(( bytes <= MAX_BYTES )) || die "image is too large: $bytes bytes (limit $MAX_BYTES)"
+
 # identify is the arbiter of whether these bytes are an image at all -- the
 # name they arrived under proves nothing.
-read -r format width height < <(magick identify -format '%m %w %h\n' "$SRC" 2>/dev/null | head -1)
+# identify reads the header rather than the pixels, so the dimensions are known
+# before anything is decoded -- which is the only order in which a pixel ceiling
+# is worth having.
+read -r format width height < <(magick identify "${LIMITS[@]}" -format '%m %w %h\n' "$SRC" 2>/dev/null | head -1)
 [[ -n "${format:-}" && -n "${width:-}" && -n "${height:-}" ]] || die "not an image"
+[[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]] || die "not an image"
+(( width * height <= MAX_PIXELS )) || die "image is too large to decode: ${width}x${height} (limit $MAX_PIXELS pixels)"
 
 case "$format" in
   PNG) ext=png ;;
@@ -77,19 +103,31 @@ blob="$DIR/blobs/$sha.$ext"
 thumb="$DIR/thumbs/$sha.webp"
 mkdir -p "$DIR/blobs" "$DIR/thumbs" || die "could not write to $DIR"
 
+# The hash is derived from the image, so every path written below is
+# predictable by whoever supplies it. Staging through mktemp -- which creates
+# exclusively, never following an existing link -- and renaming into place
+# keeps that from mattering: rename replaces a symlink rather than writing
+# through it, and the move is atomic, so a reader never sees a blob whose bytes
+# do not hash to its name.
 deduped=true
-if [[ ! -f "$blob" ]]; then
+if [[ ! -f "$blob" || -L "$blob" ]]; then
   deduped=false
-  # Same filesystem, so the rename is atomic: a reader never sees a blob
-  # whose bytes do not hash to its name.
-  cp -- "$SRC" "$blob.part" && mv -- "$blob.part" "$blob" || die "could not store the image"
+  staged=$(mktemp "$DIR/blobs/.staging.XXXXXXXX") || die "could not stage the image"
+  cp -- "$SRC" "$staged" && mv -f -- "$staged" "$blob" || {
+    rm -f -- "$staged"
+    die "could not store the image"
+  }
 fi
 
-if [[ ! -f "$thumb" ]]; then
+if [[ ! -f "$thumb" || -L "$thumb" ]]; then
   # 320 on the long edge, shrink-only. Lists load nothing but these, so the
   # bound is the reason they stay cheap to render.
-  magick "$SRC[0]" -auto-orient -resize '320x320>' -quality 82 "$thumb.part" 2>/dev/null &&
-    mv -- "$thumb.part" "$thumb" || die "could not render a thumbnail"
+  staged=$(mktemp "$DIR/thumbs/.staging.XXXXXXXX") || die "could not stage the thumbnail"
+  magick "${LIMITS[@]}" "$SRC[0]" -auto-orient -resize '320x320>' -quality 82 "webp:$staged" 2>/dev/null &&
+    mv -f -- "$staged" "$thumb" || {
+      rm -f -- "$staged"
+      die "could not render a thumbnail"
+    }
 fi
 
 jq -cn \

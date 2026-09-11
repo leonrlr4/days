@@ -19,6 +19,12 @@
 # the note below. Anything that runs at boot is in that window.
 set -uo pipefail
 
+# A fixed PATH, not whatever the caller happened to export. Every tool below is
+# resolved from it, so a writable directory earlier in someone's PATH cannot
+# stand in for magick, jq or cp. Omarchy's own commands live outside it and are
+# added explicitly.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
+
 ID="leonrlr4.days"
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
@@ -39,6 +45,18 @@ while (($#)); do
     *) echo "setup: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+# The key is written verbatim into a quoted Lua string in bindings.lua, so
+# anything able to close that string runs on the next config load. Rather than
+# escaping, only the grammar Hyprland actually accepts is allowed through:
+# modifier words joined by +, and a key name, keycode or symbol. Quotes,
+# backslashes and newlines have no way in.
+if [[ ! "$KEY" =~ ^[A-Za-z0-9_]+([[:space:]]*\+[[:space:]]*[A-Za-z0-9_]+)*$ &&
+      ! "$KEY" =~ ^[A-Za-z0-9_]+([[:space:]]*\+[[:space:]]*[A-Za-z0-9_]+)*[[:space:]]*\+[[:space:]]*code:[0-9]+$ ]]; then
+  echo "setup: not a valid key: $KEY" >&2
+  echo "setup: expected something like \"SUPER + M\", \"CTRL + ALT + comma\" or \"SUPER + code:20\"" >&2
+  exit 2
+fi
 
 missing=0
 changed=0
