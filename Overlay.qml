@@ -839,7 +839,9 @@ Item {
               { k: "t", v: "today" },
               { k: "n", v: "new" },
               { k: "tab esc", v: "detail" },
-              { k: "ctrl+⌫", v: "remove" },
+              // Spelled out rather than ⌫: the bar's font has no U+232B and
+              // substitutes something that reads as an infinity sign.
+              { k: "ctrl+bksp", v: "remove" },
               { k: "dd", v: "delete" },
               { k: "u", v: "undo" },
               { k: "q", v: "close" }
