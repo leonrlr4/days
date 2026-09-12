@@ -16,6 +16,11 @@ rm -rf "${XDG_RUNTIME_DIR:-/tmp}/days-fileview-test"
 out=$(QT_ASSUME_STDERR_HAS_CONSOLE=1 quickshell -p tests/test_qml.qml 2>&1) || fail=1
 grep -E 'FAIL|ok ' <<<"$out" | sed 's/\x1b\[[0-9;]*m//g'
 
+# Key delivery needs a shown window to send events to, so this suite runs under
+# qmltestrunner rather than beside the others.
+QT_ASSUME_STDERR_HAS_CONSOLE=1 /usr/lib/qt6/bin/qmltestrunner -platform offscreen \
+  -input tests/test_keys.qml >/dev/null || fail=1
+
 bash tests/test_paste.sh || fail=1
 bash tests/test_gc.sh || fail=1
 bash tests/test_setup.sh || fail=1

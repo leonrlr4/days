@@ -51,7 +51,9 @@ Item {
   property var events: []
   property string eventsWanted: ""
   property string pasteError: ""
-  property string copiedSha: ""
+  // What was just put on the clipboard, so the corner can say so. One key for
+  // images and text alike: "att:<sha>" or "task:<id>" / "sub:<id>:<n>".
+  property string copiedKey: ""
 
   // Saving is continuous, so the only question worth answering on screen is
   // whether it has caught up. Unsaved while anything is pending, then "saved"
@@ -110,6 +112,7 @@ Item {
   signal commitEdits()
 
   function close() {
+    dayPane.commitEdit()
     root.commitEdits()
     root.flush()
     root.editingNote = false
@@ -307,17 +310,42 @@ Item {
     if (!date || !id) return
     var result = Store.deleteTask(root.readDay(date), id)
     if (!result.removed) return
-    root.undoEntry = { date: date, task: result.removed, at: result.at }
+    root.undoEntry = { kind: "task", date: date, task: result.removed, at: result.at }
     root.mutateDay(date, function() { return result.day })
     var list = root.readDay(root.date).tasks
     var fallback = list.length ? list[Math.min(result.at, list.length - 1)] : null
     root.select(root.date, fallback ? fallback.id : "")
   }
 
+  // Removing a subtask goes through here rather than straight to mutateDay so
+  // that it lands in the same undo slot as `dd`. The × on a subtask row and
+  // Ctrl+Backspace are otherwise the only destructive things in the overlay
+  // with nothing behind them.
+  function removeSub(at) {
+    var task = root.selTask
+    if (!task || at < 0 || at >= task.subs.length) return
+    var id = root.selId
+    var sub = { text: task.subs[at].text, done: task.subs[at].done }
+    root.undoEntry = { kind: "sub", date: root.selDate, id: id, sub: sub, at: at }
+    root.mutateDay(root.selDate, function(d) { return Store.removeSub(d, id, at) })
+  }
+
   function undoDelete() {
     var entry = root.undoEntry
     if (!entry) return
     root.undoEntry = null
+    if (entry.kind === "sub") {
+      var id = entry.id
+      var sub = entry.sub
+      var at = entry.at
+      root.mutateDay(entry.date, function(d) {
+        return Store.restoreSub(d, id, sub, at)
+      })
+      // The task it belongs to, not the subtask: selection is per task, and
+      // the detail pane is where the restored line is visible.
+      root.select(entry.date, id)
+      return
+    }
     root.mutateDay(entry.date, function(d) {
       return Store.restoreTask(d, entry.task, entry.at)
     })
@@ -342,6 +370,21 @@ Item {
     copyProc.command = [root.pluginDir + "/scripts/copy-image",
                         "--dir", root.dataDir, "--sha", att.sha, "--ext", att.ext]
     copyProc.running = true
+  }
+
+  // Double-clicking any line puts it on the clipboard. Text goes straight
+  // through Quickshell rather than out to wl-copy: there is no file to hand
+  // over, so there is no reason to start a process for it.
+  function copyText(key, text) {
+    var value = String(text === null || text === undefined ? "" : text)
+    if (!value) return
+    Quickshell.clipboardText = value
+    root.copiedKey = key
+    copiedFlash.restart()
+  }
+
+  function setTaskText(date, id, text) {
+    root.mutateDay(date, function(d) { return Store.setTaskText(d, id, text) })
   }
 
   function pasteImage() {
@@ -549,7 +592,7 @@ Item {
           root.pasteError = result.error || "could not copy the image"
           return
         }
-        root.copiedSha = result.sha
+        root.copiedKey = "att:" + result.sha
         copiedFlash.restart()
       }
     }
@@ -561,7 +604,7 @@ Item {
   Timer {
     id: copiedFlash
     interval: 1400
-    onTriggered: root.copiedSha = ""
+    onTriggered: root.copiedKey = ""
   }
 
   Process {
@@ -633,7 +676,19 @@ Item {
         anchors.fill: parent
         focus: true
 
+        // Every pane sits under this handler, and Qt Quick walks an unconsumed
+        // key up the parent chain -- so whatever a focused editor declines
+        // arrives here. An editor declines more than it looks: Up and Down
+        // always, and Left or Right whenever its cursor is already at that end
+        // of the line. Typing a subtask and pressing Up used to move the
+        // selection, and re-syncing the editors to the newly selected task
+        // threw the half-typed line away.
+        //
+        // Hence a guard rather than a list of exceptions: this fires only
+        // while the catcher itself holds focus, which is exactly when no
+        // editor is open. tests/test_keys.qml pins both halves.
         Keys.onPressed: function(event) {
+          if (!keyCatcher.activeFocus) return
           if (root.lightboxAt >= 0) {
             root.lightboxAt = -1
             event.accepted = true
@@ -641,6 +696,14 @@ Item {
           }
           switch (event.key) {
           case Qt.Key_Escape:
+            // Escape only ever steps back, never out. It used to close, which
+            // made the second of two Escapes destructive: leaving an editor
+            // and then tapping it again -- the reflex any vim user has for
+            // making sure they are in normal mode -- threw the overlay away
+            // along with wherever you were in it. Closing is `q`, the toggle
+            // key, or a click on the scrim.
+            event.accepted = true; return
+          case Qt.Key_Q:
             root.close(); event.accepted = true; return
           case Qt.Key_J:
           case Qt.Key_Down:
@@ -658,6 +721,30 @@ Item {
             root.goToDate(root.today); event.accepted = true; return
           case Qt.Key_N:
             dayPane.focusAdd(); event.accepted = true; return
+          case Qt.Key_Return:
+          case Qt.Key_Enter:
+            dayPane.editSelected(); event.accepted = true; return
+          case Qt.Key_Backspace:
+          case Qt.Key_Delete:
+            // The same key a subtask uses, so "remove the thing I am on" is
+            // one gesture everywhere. `dd` still works.
+            if (event.modifiers & Qt.ControlModifier) {
+              root.deleteSelected()
+              event.accepted = true
+            }
+            return
+          case Qt.Key_Tab:
+            // Into the detail pane and around its stops; Escape comes back
+            // out. Before this the pane could only be reached with a mouse --
+            // the subtask field in particular had no key that led to it.
+            //
+            // Shift enters at the far end instead, so the pane's own reverse
+            // walk is reachable without going the long way round first.
+            if (event.modifiers & Qt.ShiftModifier) detailPane.focusSubAdd()
+            else detailPane.focusTitle()
+            event.accepted = true; return
+          case Qt.Key_Backtab:
+            detailPane.focusSubAdd(); event.accepted = true; return
           case Qt.Key_Space:
             if (root.selId) root.toggleDone(root.selDate, root.selId)
             event.accepted = true; return
@@ -716,14 +803,18 @@ Item {
             height: parent.height
             overlay: root
             onDismissed: keyCatcher.forceActiveFocus()
+            onTabbed: detailPane.focusTitle()
+            onTabbedBack: detailPane.focusSubAdd()
           }
 
           Rectangle { width: 1; height: parent.height; color: root.lineSoft }
 
           DetailPane {
+            id: detailPane
             width: parent.width - Style.space(228) - Style.space(392) - 2
             height: parent.height
             overlay: root
+            onDismissed: keyCatcher.forceActiveFocus()
           }
         }
 
@@ -739,14 +830,19 @@ Item {
 
           Repeater {
             model: [
+              // ctrl+v is not here on purpose: the attachments box says
+              // "⌃V paste image" on itself, which is where you are looking
+              // when you want it.
               { k: "j k", v: "move" },
               { k: "space", v: "done" },
               { k: "h l", v: "day" },
               { k: "t", v: "today" },
               { k: "n", v: "new" },
-              { k: "ctrl+v", v: "paste image" },
+              { k: "tab esc", v: "detail" },
+              { k: "ctrl+⌫", v: "remove" },
               { k: "dd", v: "delete" },
-              { k: "u", v: "undo" }
+              { k: "u", v: "undo" },
+              { k: "q", v: "close" }
             ]
             Row {
               spacing: Style.spacing.sm
@@ -779,8 +875,13 @@ Item {
           anchors.bottom: parent.bottom
           height: Style.space(34)
           verticalAlignment: Text.AlignVCenter
-          text: root.unsaved ? "saving…" : (root.justSaved ? "saved" : "")
-          color: root.unsaved ? root.dimmer : root.accent
+          // Copying is the one action with nothing else on screen to show for
+          // it -- the clipboard is invisible. It takes precedence because it
+          // dirties nothing, so it never competes with "saving…".
+          text: root.copiedKey !== "" ? "copied"
+              : (root.unsaved ? "saving…" : (root.justSaved ? "saved" : ""))
+          color: root.copiedKey !== "" ? root.accent
+               : (root.unsaved ? root.dimmer : root.accent)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           opacity: text === "" ? 0 : 1

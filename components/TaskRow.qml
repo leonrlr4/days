@@ -19,11 +19,30 @@ Item {
 
   property string sourceDate: ""     // set only in the carried-over section
   property bool selected: false
+  property bool editing: false
 
   signal toggled()
   signal opened()
   signal pulled()
   signal deleted()
+  signal copied()
+  signal edited(string text)
+
+  // Opened by the day pane, which owns which row is being edited; the row only
+  // has to put the keyboard in the right place once the field exists.
+  onEditingChanged: {
+    if (!row.editing) return
+    field.text = row.task ? row.task.text : ""
+    Qt.callLater(function() {
+      field.forceActiveFocus()
+      field.cursorPosition = field.length
+    })
+  }
+
+  function commit() {
+    if (!row.editing) return
+    row.edited(field.text)
+  }
 
   readonly property bool carried: sourceDate !== ""
 
@@ -36,6 +55,9 @@ Item {
     color: row.selected ? overlay.raised
          : (hover.containsMouse ? Qt.rgba(overlay.fg.r, overlay.fg.g, overlay.fg.b, 0.03)
                                 : "transparent")
+    border.width: 1
+    border.color: row.editing
+      ? Qt.rgba(overlay.accent.r, overlay.accent.g, overlay.accent.b, 0.7) : "transparent"
   }
 
   // The selected row is marked on its leading edge rather than by a fill, so
@@ -50,11 +72,17 @@ Item {
     color: overlay.accent
   }
 
+  // One click selects, two copy. The first click of a double click arrives as
+  // a plain click, which is exactly why selection is the safe thing to hang on
+  // it: selecting the row you are about to copy from costs nothing, where
+  // ticking it twice would have needed the 220ms wait the thumbnails use.
   MouseArea {
     id: hover
     anchors.fill: parent
     hoverEnabled: true
+    enabled: !row.editing
     onClicked: row.opened()
+    onDoubleClicked: row.copied()
   }
 
   Row {
@@ -99,9 +127,34 @@ Item {
     }
 
     // ---- the text ----
+    Item {
+      width: parent.width - Style.space(15) - meta.width - Style.spacing.xl * 2
+      height: row.height
+
+      TextInput {
+        id: field
+        visible: row.editing
+        width: parent.width
+        y: Style.spacing.lg - Style.spacing.xxs
+        color: overlay.fg
+        font.family: overlay.fontFamily
+        font.pixelSize: Style.font.body
+        selectByMouse: true
+        selectionColor: Qt.rgba(overlay.accent.r, overlay.accent.g, overlay.accent.b, 0.3)
+        clip: true
+
+        // Enter finishes and Escape finishes: the text has been typed, and the
+        // key that means "done editing" elsewhere in this overlay must not be
+        // the one that throws it away. Clicking elsewhere commits too.
+        onAccepted: row.commit()
+        Keys.onEscapePressed: row.commit()
+        onActiveFocusChanged: if (!activeFocus) row.commit()
+      }
+
     Text {
       id: label
-      width: parent.width - Style.space(15) - meta.width - Style.spacing.xl * 2
+      visible: !row.editing
+      width: parent.width
       y: Style.spacing.lg - Style.spacing.xxs
       text: row.task ? row.task.text : ""
       color: row.task && row.task.done ? overlay.dimmer : overlay.fg
@@ -111,6 +164,7 @@ Item {
       wrapMode: Text.Wrap
       maximumLineCount: 3
       elide: Text.ElideRight
+    }
     }
 
     // ---- what it carries, or where it came from ----

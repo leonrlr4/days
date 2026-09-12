@@ -8,8 +8,47 @@ Item {
   required property var overlay
 
   signal dismissed()
+  signal tabbed()
+  signal tabbedBack()
 
   function focusAdd() { addField.forceActiveFocus() }
+
+  // Which task row is open for editing. The day pane owns this rather than the
+  // rows because a row is a Repeater delegate: it is rebuilt on every edit, so
+  // it cannot be the thing that remembers it was being edited.
+  property string editingId: ""
+
+  function editSelected() {
+    if (!overlay.selId) return
+    pane.editingId = overlay.selId
+  }
+
+  // Closing the overlay has to reach whichever row is open, the same way the
+  // detail pane's editingAt does for a subtask.
+  function commitEdit() {
+    if (!pane.editingId) return
+    var row = pane.rowFor(pane.editingId)
+    if (row) row.commit()
+    pane.editingId = ""
+  }
+
+  function rowFor(id) {
+    for (var i = 0; i < taskRows.count; i++) {
+      var row = taskRows.itemAt(i)
+      if (row && row.task && row.task.id === id) return row
+    }
+    for (var j = 0; j < carriedRows.count; j++) {
+      var c = carriedRows.itemAt(j)
+      if (c && c.task && c.task.id === id) return c
+    }
+    return null
+  }
+
+  function finishEdit(date, id, text) {
+    pane.editingId = ""
+    overlay.setTaskText(date, id, text)
+    pane.dismissed()
+  }
 
   readonly property int dayDelta: {
     var a = Date.parse(overlay.today + "T00:00:00Z")
@@ -194,6 +233,7 @@ Item {
         }
 
         Repeater {
+          id: carriedRows
           model: overlay.carriedOpen ? overlay.carried : []
           TaskRow {
             width: body.width
@@ -208,10 +248,13 @@ Item {
             }
             sourceDate: modelData.date
             selected: overlay.selId === modelData.id && overlay.selDate === modelData.date
+            editing: pane.editingId === modelData.id
             onToggled: overlay.toggleDone(modelData.date, modelData.id)
             onOpened: overlay.select(modelData.date, modelData.id)
             onPulled: overlay.moveToToday(modelData.date, modelData.id)
             onDeleted: overlay.deleteTask(modelData.date, modelData.id)
+            onCopied: overlay.copyText("task:" + modelData.id, modelData.text)
+            onEdited: function(text) { pane.finishEdit(modelData.date, modelData.id, text) }
           }
         }
       }
@@ -228,15 +271,19 @@ Item {
         }
 
         Repeater {
+          id: taskRows
           model: overlay.day.tasks
           TaskRow {
             width: body.width
             overlay: pane.overlay
             task: modelData
             selected: overlay.selId === modelData.id && overlay.selDate === overlay.date
+            editing: pane.editingId === modelData.id
             onToggled: overlay.toggleDone(overlay.date, modelData.id)
             onOpened: overlay.select(overlay.date, modelData.id)
             onDeleted: overlay.deleteTask(overlay.date, modelData.id)
+            onCopied: overlay.copyText("task:" + modelData.id, modelData.text)
+            onEdited: function(text) { pane.finishEdit(overlay.date, modelData.id, text) }
           }
         }
 
@@ -322,6 +369,11 @@ Item {
         text = ""
         pane.dismissed()
       }
+
+      // Tab means the same thing wherever it is pressed: forward, into the
+      // detail pane. What is half-typed here stays here.
+      Keys.onTabPressed: pane.tabbed()
+      Keys.onBacktabPressed: pane.tabbedBack()
 
       Text {
         anchors.fill: parent

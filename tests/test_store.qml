@@ -283,6 +283,144 @@ Item {
           },
           "one")
 
+    check("setting a task's text rewrites it",
+          function() {
+            var d = day("2026-09-11", [task("a", "one"), task("b", "two")])
+            var next = Store.setTaskText(d, "b", "  changed  ")
+            return [next.tasks[0].text, next.tasks[1].text]
+          },
+          ["one", "changed"])
+
+    // Unlike a subtask, a task is a container: it carries the note, the
+    // screenshots and the subtask list. Emptying one field is not a request to
+    // throw all of that away, so this refuses rather than deleting.
+    check("emptying a task's text leaves it as it was",
+          function() {
+            var d = day("2026-09-11", [task("a", "one")])
+            return [Store.setTaskText(d, "a", "").tasks[0].text,
+                    Store.setTaskText(d, "a", "   ").tasks[0].text]
+          },
+          ["one", "one"])
+
+    check("setting an unknown task's text changes nothing",
+          function() {
+            var d = day("2026-09-11", [task("a", "one")])
+            return Store.setTaskText(d, "zz", "changed").tasks[0].text
+          },
+          "one")
+
+    // ---- subtasks ----------------------------------------------------------
+    check("removing a subtask takes out the one at that index",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }, { text: "y", done: true },
+                      { text: "z", done: false }]
+            var d = Store.removeSub(day("2026-09-11", [t]), "a", 1)
+            return d.tasks[0].subs.map(function(s) { return s.text })
+          },
+          ["x", "z"])
+
+    check("removing a subtask out of range leaves the list alone",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }]
+            return [Store.removeSub(day("2026-09-11", [t]), "a", 4).tasks[0].subs.length,
+                    Store.removeSub(day("2026-09-11", [t]), "a", -1).tasks[0].subs.length]
+          },
+          [1, 1])
+
+    check("removing a subtask does not mutate the day it was given",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }]
+            var d = day("2026-09-11", [t])
+            Store.removeSub(d, "a", 0)
+            return d.tasks[0].subs.length
+          },
+          1)
+
+    // Undo has to put it back where it was, not on the end: a subtask reads as
+    // a step in a sequence, and a restore that reorders them silently rewrites
+    // what the list meant.
+    check("restoring a subtask puts it back at its own index",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }, { text: "z", done: false }]
+            var d = Store.restoreSub(day("2026-09-11", [t]), "a",
+                                     { text: "y", done: true }, 1)
+            return d.tasks[0].subs.map(function(s) { return s.text })
+          },
+          ["x", "y", "z"])
+
+    check("restoring a subtask keeps whether it was done",
+          function() {
+            var t = task("a", "one")
+            t.subs = []
+            var d = Store.restoreSub(day("2026-09-11", [t]), "a",
+                                     { text: "y", done: true }, 0)
+            return d.tasks[0].subs[0].done
+          },
+          true)
+
+    // The list can have shrunk further between the delete and the undo.
+    check("restoring a subtask past the end appends it",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }]
+            var d = Store.restoreSub(day("2026-09-11", [t]), "a",
+                                     { text: "y", done: false }, 9)
+            return d.tasks[0].subs.map(function(s) { return s.text })
+          },
+          ["x", "y"])
+
+    check("a restored subtask is a copy, not the object handed in",
+          function() {
+            var t = task("a", "one")
+            t.subs = []
+            var sub = { text: "y", done: false }
+            var d = Store.restoreSub(day("2026-09-11", [t]), "a", sub, 0)
+            sub.text = "changed"
+            return d.tasks[0].subs[0].text
+          },
+          "y")
+
+    check("setting a subtask's text rewrites only that one",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }, { text: "y", done: true }]
+            var next = Store.setSubText(t, 1, "changed")
+            return next.subs.map(function(s) { return s.text + ":" + s.done })
+          },
+          ["x:false", "changed:true"])
+
+    check("setting a subtask's text trims what it is given",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }]
+            return Store.setSubText(t, 0, "  padded  ").subs[0].text
+          },
+          "padded")
+
+    // Emptying a subtask is a removal, and removal is the caller's business
+    // because it has to be undoable. This only declines to write it.
+    check("setting a subtask's text to nothing leaves it alone",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }]
+            return [Store.setSubText(t, 0, "").subs[0].text,
+                    Store.setSubText(t, 0, "   ").subs[0].text]
+          },
+          ["x", "x"])
+
+    check("setting a subtask's text out of range changes nothing",
+          function() {
+            var t = task("a", "one")
+            t.subs = [{ text: "x", done: false }]
+            return [Store.setSubText(t, 3, "nope").subs.length,
+                    Store.setSubText(t, -1, "nope").subs[0].text]
+          },
+          [1, "x"])
+
     // ---- moving between days ---------------------------------------------
     check("moving a task takes it out of one day and puts it in the other",
           function() {
